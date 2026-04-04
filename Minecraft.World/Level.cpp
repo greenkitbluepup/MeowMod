@@ -28,6 +28,7 @@
 #include "WeighedRandom.h"
 
 #include "ConsoleSaveFile.h"
+#include "LevelHooks.h"
 #include <xuiapp.h>
 #include "..\Minecraft.Client\Minecraft.h"
 #include "..\Minecraft.Client\LevelRenderer.h"
@@ -1459,6 +1460,11 @@ int Level::getLightColor(int x, int y, int z, int emitt, int tileId/*=-1*/)
 	int s = getBrightnessPropagate(LightLayer::Sky, x, y, z, tileId);
 	int b = getBrightnessPropagate(LightLayer::Block, x, y, z, tileId);
 	if (b < emitt) b = emitt;
+	if (isClientSide && g_queryDynamicLight)
+	{
+		int dyn = g_queryDynamicLight(x, y, z);
+		if (dyn > b) b = dyn;
+	}
 	return s << 20 | b << 4;
 }
 
@@ -1466,13 +1472,24 @@ float Level::getBrightness(int x, int y, int z, int emitt)
 {
 	int n = getRawBrightness(x, y, z);
 	if (n < emitt) n = emitt;
+	if (isClientSide && g_queryDynamicLight)
+	{
+		int dyn = g_queryDynamicLight(x, y, z);
+		if (dyn > n) n = dyn;
+	}
 	return dimension->brightnessRamp[n];
 }
 
 
 float Level::getBrightness(int x, int y, int z)
 {
-	return dimension->brightnessRamp[getRawBrightness(x, y, z)];
+	int n = getRawBrightness(x, y, z);
+	if (isClientSide && g_queryDynamicLight)
+	{
+		int dyn = g_queryDynamicLight(x, y, z);
+		if (dyn > n) n = dyn;
+	}
+	return dimension->brightnessRamp[n];
 }
 
 
@@ -2234,6 +2251,24 @@ void Level::forceAddTileTick(int x, int y, int z, int tileId, int tickDelay, int
 
 void Level::tickEntities()
 {
+	// Keep the tile opacity query pointing at the current client Level so mod
+	// BFS always reads live world data. One client Level active at a time;
+	// last writer wins, which is correct for dimension switches.
+	if (isClientSide)
+	{
+		static Level* s_opacityLevel = nullptr;
+		s_opacityLevel = this;
+		g_hostGetTileOpacity = [](int x, int y, int z) -> int
+		{
+			if (!s_opacityLevel) return 0;
+			if (x < -MAX_LEVEL_SIZE || z < -MAX_LEVEL_SIZE ||
+				x >= MAX_LEVEL_SIZE  || z >= MAX_LEVEL_SIZE  ||
+				y < 0 || y >= maxBuildHeight)
+				return 0;
+			int id = s_opacityLevel->getTile(x, y, z);
+			return Tile::lightBlock[id];
+		};
+	}
 	vector<shared_ptr<Entity> >::iterator itGE = globalEntities.begin();
 	while( itGE != globalEntities.end() )
 	{
@@ -2445,6 +2480,74 @@ void Level::tickEntities()
 		pendingTileEntities.clear();
 	}
 	LeaveCriticalSection(&m_tileEntityListCS);
+
+	// Emitter feed: push entity light data to mods, client-side only.
+	// Order: BeginEmitterFeed -> NotifyEmitter per entity -> EndEmitterFeed.
+	if (isClientSide && g_notifyEmitter)
+	{
+		if (g_beginEmitterFeed) g_beginEmitterFeed();
+
+		EnterCriticalSection(&m_entitiesCS);
+		for (auto& e : entities)
+		{
+			if (!e || e->removed) continue;
+
+			int strength = 0;
+
+			// Fire always wins.
+			if (e->isOnFire())
+			{
+				strength = 15;
+			}
+			else if (e->instanceof(eTYPE_PLAYER))
+			{
+				// Player is NOT derived from Mob in this codebase — check separately.
+				Player* player = static_cast<Player*>(e.get());
+				shared_ptr<ItemInstance> held = player->getCarriedItem();
+				if (held)
+				{
+					int tid = held->id;
+					if (tid >= 0 && tid < Tile::TILE_NUM_COUNT)
+						strength = Tile::lightEmission[tid];
+				}
+				for (int slot = 0; slot < 4; ++slot)
+				{
+					shared_ptr<ItemInstance> armor = player->getArmor(slot);
+					if (armor)
+					{
+						int tid = armor->id;
+						if (tid >= 0 && tid < Tile::TILE_NUM_COUNT)
+						{
+							int em = Tile::lightEmission[tid];
+							if (em > strength) strength = em;
+						}
+					}
+				}
+			}
+			else if (e->instanceof(eTYPE_MOB))
+			{
+				Mob* mob = static_cast<Mob*>(e.get());
+				shared_ptr<ItemInstance> held = mob->getCarriedItem();
+				if (held)
+				{
+					int tid = held->id;
+					if (tid >= 0 && tid < Tile::TILE_NUM_COUNT)
+						strength = Tile::lightEmission[tid];
+				}
+			}
+
+			if (strength > 0)
+			{
+				g_notifyEmitter(
+					e->entityId,
+					Mth::floor(e->x), Mth::floor(e->y), Mth::floor(e->z),
+					strength);
+			}
+		}
+		LeaveCriticalSection(&m_entitiesCS);
+
+		if (g_endEmitterFeed) g_endEmitterFeed();
+	}
 }
 
 void Level::addAllPendingTileEntities(vector< shared_ptr<TileEntity> >& entities)

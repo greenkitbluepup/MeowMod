@@ -35,6 +35,7 @@ target_include_directories(Minecraft.Client PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CMAKE_CURRENT_SOURCE_DIR}/${PLATFORM_NAME}/Iggy/include"
   "${CMAKE_SOURCE_DIR}/include/"
+  "${CMAKE_SOURCE_DIR}/Minecraft.Mods"
 )
 target_compile_definitions(Minecraft.Client PRIVATE
   ${MINECRAFT_SHARED_DEFINES}
@@ -51,6 +52,7 @@ set_target_properties(Minecraft.Client PROPERTIES
 
 target_link_libraries(Minecraft.Client PRIVATE
   Minecraft.World
+  Minecraft.Mods
   d3d11
   d3dcompiler
   XInput9_1_0
@@ -93,4 +95,16 @@ add_copyredist_target(Minecraft.Client)
 # Make sure GameHDD exists on Windows
 if(PLATFORM_NAME STREQUAL "Windows64")
   add_gamehdd_target(Minecraft.Client)
+endif()
+
+# Ensure the mods/ output folder exists next to the exe
+if(PLATFORM_NAME STREQUAL "Windows64")
+  add_custom_target(EnsureModsDir ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+      "$<TARGET_FILE_DIR:Minecraft.Client>/mods"
+    COMMENT "Ensuring mods/ directory exists..."
+    VERBATIM
+  )
+  set_property(TARGET EnsureModsDir PROPERTY FOLDER "Build")
+  add_dependencies(Minecraft.Client EnsureModsDir)
 endif()

@@ -7,6 +7,8 @@
 #include "..\Minecraft.World\net.minecraft.world.level.tile.h"
 #include "..\Minecraft.World\net.minecraft.world.level.tile.entity.h"
 #include "LevelRenderer.h"
+#include "..\Minecraft.World\ChunkBakeHooks.h"
+#include "ModLightRegion.h"
 
 #ifdef __PS3__
 #include "PS3\SPU_Tasks\ChunkUpdate\ChunkRebuildData.h"
@@ -177,6 +179,7 @@ void Chunk::makeCopyForRebuild(Chunk *source)
 	this->id = source->id;
 	this->globalRenderableTileEntities = source->globalRenderableTileEntities;
 	this->globalRenderableTileEntities_cs = source->globalRenderableTileEntities_cs;
+	this->pendingModLightSnapshot = nullptr; // set by caller on the game thread after this copy
 }
 
 void Chunk::rebuild()
@@ -237,6 +240,12 @@ void Chunk::rebuild()
 	level->getChunkAt(x,z)->getBlockData(tileArray);		// 4J - TODO - now our data has been re-arranged, we could just extra the vertical slice of this chunk rather than the whole thing
 
 	LevelSource *region = new Region(level, x0 - r, y0 - r, z0 - r, x1 + r, y1 + r, z1 + r, r);
+
+	// If a mod prepared a snapshot for this slot, wrap the Region so the bake
+	// thread queries frozen mod light data instead of touching live mod state.
+	if (pendingModLightSnapshot)
+		region = new ModLightRegion(region, pendingModLightSnapshot);
+
 	TileRenderer *tileRenderer = new TileRenderer(region, this->x, this->y, this->z, tileIds);
 
 	// AP - added a caching system for Chunk::rebuild to take advantage of
@@ -332,6 +341,10 @@ void Chunk::rebuild()
 
 		delete region;
 		delete tileRenderer;
+
+		if (pendingModLightSnapshot && g_destroyChunkLightSnapshot)
+			g_destroyChunkLightSnapshot(pendingModLightSnapshot);
+		pendingModLightSnapshot = nullptr;
 		return;
 	}
 	// 4J - optimisation ends
@@ -481,6 +494,10 @@ void Chunk::rebuild()
 
 	delete tileRenderer;
 	delete region;
+
+	if (pendingModLightSnapshot && g_destroyChunkLightSnapshot)
+		g_destroyChunkLightSnapshot(pendingModLightSnapshot);
+	pendingModLightSnapshot = nullptr;
 
 	PIXEndNamedEvent();
 	PIXBeginNamedEvent(0,"Rebuild section D");

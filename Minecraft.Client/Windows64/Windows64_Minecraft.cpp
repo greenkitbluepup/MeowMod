@@ -49,6 +49,7 @@
 #include "Network\WinsockNetLayer.h"
 #include "Windows64_Xuid.h"
 #include "Common/UI/UI.h"
+#include "..\..\Minecraft.Mods\ModLoader.h"
 
 // Forward-declare the internal Renderer class and its global instance from 4J_Render_PC_d.lib.
 // C4JRender (RenderManager) is a stateless wrapper — all D3D state lives in InternalRenderManager.
@@ -1285,6 +1286,8 @@ static Minecraft* InitialiseMinecraftRuntime()
 	Level::enableLightingCache();
 	Tile::CreateNewThreadStorage();
 
+	g_modLoader.loadAllMods("mods");
+
 	Minecraft::main();
 	Minecraft* pMinecraft = Minecraft::GetInstance();
 	if (pMinecraft == nullptr)
@@ -1646,6 +1649,7 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
 		{
 			pMinecraft->applyFrameMouseLook();  // Per-frame mouse look (before ticks + render)
 			pMinecraft->run_middle();
+			g_modLoader.tickClient();
 			app.SetAppPaused( g_NetworkManager.IsLocalGame() && g_NetworkManager.GetPlayerCount() == 1 && ui.IsPauseMenuDisplayed(ProfileManager.GetPrimaryPad()) );
 		}
 		else

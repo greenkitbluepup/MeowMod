@@ -68,6 +68,10 @@ private:
 public:
 	void makeCopyForRebuild(Chunk *source);
 	void rebuild();
+
+	// Snapshot handle prepared on the game thread before this permaChunk slot
+	// is dispatched for rebuild. Owned by the mod; destroyed after rebuild.
+	void* pendingModLightSnapshot = nullptr;
 #ifdef __PS3__
 	void rebuild_SPU();
 #endif // __PS3__

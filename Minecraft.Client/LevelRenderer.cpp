@@ -4,6 +4,8 @@
 #include "TextureAtlas.h"
 #include "Tesselator.h"
 #include "Chunk.h"
+#include "..\Minecraft.World\ChunkBakeHooks.h"
+#include "..\Minecraft.World\LevelHooks.h"
 #include "EntityRenderDispatcher.h"
 #include "TileEntityRenderDispatcher.h"
 #include "DistanceChunkSorter.h"
@@ -112,6 +114,15 @@ const int LevelRenderer::DIMENSION_OFFSETS[3] = { 0, (80 * 80 * CHUNK_Y_COUNT) ,
 
 LevelRenderer::LevelRenderer(Minecraft *mc, Textures *textures)
 {
+	// Install the region-dirty hook so mods can trigger chunk re-bakes.
+	// One LevelRenderer exists at a time; last writer wins on re-init.
+	static LevelRenderer* s_instance = nullptr;
+	s_instance = this;
+	g_markRegionDirty = [](int x0, int y0, int z0, int x1, int y1, int z1)
+	{
+		if (s_instance) s_instance->setDirty(x0, y0, z0, x1, y1, z1, nullptr);
+	};
+
 	breakingTextures = nullptr;
 
 	for( int i = 0; i < 4; i++ )
@@ -2081,6 +2092,20 @@ bool LevelRenderer::updateDirtyChunks()
 		}
 		LeaveCriticalSection(&m_csDirtyChunks);
 
+		// Prepare per-slot mod light snapshots on the game thread now, before
+		// any rebuild thread is activated. Each slot gets its own independent
+		// handle so concurrent rebuilds never share mutable snapshot state.
+		for (int i = 0; i <= index; ++i)
+		{
+			if (g_prepareChunkLightSnapshot)
+				permaChunk[i].pendingModLightSnapshot =
+					g_prepareChunkLightSnapshot(permaChunk[i].x >> 4,
+												 permaChunk[i].y >> 4,
+												 permaChunk[i].z >> 4);
+			else
+				permaChunk[i].pendingModLightSnapshot = nullptr;
+		}
+
 		--index; // Bring it back into 0 counted range
 
 		for(int i = MAX_CHUNK_REBUILD_THREADS - 1; i >= 0; --i)
@@ -2149,9 +2174,9 @@ bool LevelRenderer::updateDirtyChunks()
 		static Chunk permaChunk;
 		permaChunk.makeCopyForRebuild(chunk);
 		LeaveCriticalSection(&m_csDirtyChunks);
-		//		static int64_t totalTime = 0;
-		//		static int64_t countTime = 0;
-		//		int64_t startTime = System::currentTimeMillis();
+		permaChunk.pendingModLightSnapshot = g_prepareChunkLightSnapshot
+			? g_prepareChunkLightSnapshot(permaChunk.x >> 4, permaChunk.y >> 4, permaChunk.z >> 4)
+			: nullptr;
 		permaChunk.rebuild();
 		//		int64_t endTime = System::currentTimeMillis();
 		//		totalTime += (endTime - startTime);

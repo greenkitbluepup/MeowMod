@@ -19,6 +19,7 @@ target_include_directories(Minecraft.Server PRIVATE
   "${CMAKE_SOURCE_DIR}/Minecraft.Client/${PLATFORM_NAME}/Iggy/include"
   "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CMAKE_SOURCE_DIR}/include/"
+  "${CMAKE_SOURCE_DIR}/Minecraft.Mods"
 )
 target_compile_definitions(Minecraft.Server PRIVATE
   ${MINECRAFT_SHARED_DEFINES}
@@ -37,6 +38,7 @@ set_target_properties(Minecraft.Server PROPERTIES
 
 target_link_libraries(Minecraft.Server PRIVATE
   Minecraft.World
+  Minecraft.Mods
   d3d11
   d3dcompiler
   XInput9_1_0

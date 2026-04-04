@@ -26,6 +26,8 @@ set(_MINECRAFT_SERVER_COMMON_ROOT
   "${CMAKE_CURRENT_SOURCE_DIR}/../Minecraft.Client/ChickenModel.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/../Minecraft.Client/ChickenRenderer.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/../Minecraft.Client/Chunk.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../Minecraft.Client/ModLightRegion.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../Minecraft.Client/ModLightRegion.h"
   "${CMAKE_CURRENT_SOURCE_DIR}/../Minecraft.Client/ClientConnection.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/../Minecraft.Client/ClientConstants.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/../Minecraft.Client/ClockTexture.cpp"
