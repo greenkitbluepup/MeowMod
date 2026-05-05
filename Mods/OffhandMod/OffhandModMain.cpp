@@ -7,7 +7,7 @@
 
 static ModHostAPI g_api{};
 
-static bool g_prevFDown = false;
+static volatile bool g_prevFDown = false;
 static bool g_requestedInitialSync = false;
 
 static const char* kSwapChannel = "offhandmod:swap";
@@ -100,9 +100,12 @@ static void OnClientTick()
 {
     RequestInitialSyncIfReady();
 
+    // Read the key state into a local first so the optimizer can't hoist it
+    // across the tick boundary or treat GetAsyncKeyState as pure/constant.
     bool fDown = (GetAsyncKeyState('F') & 0x8000) != 0;
+    bool prevDown = g_prevFDown;
 
-    if (fDown && !g_prevFDown)
+    if (fDown && !prevDown)
     {
         const char payload[] = "swap";
 

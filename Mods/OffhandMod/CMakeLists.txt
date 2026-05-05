@@ -12,7 +12,7 @@ set_target_properties(OffhandMod PROPERTIES
     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
 )
 
-configure_compiler_target(OffhandMod)
+configure_mod_target(OffhandMod)
 
 add_custom_command(TARGET OffhandMod POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory

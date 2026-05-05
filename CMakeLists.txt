@@ -87,9 +87,63 @@ function(configure_compiler_target target)
   endif()
 endfunction()
 
+# configure_mod_target: like configure_compiler_target but without /GL or LTO.
+# Mod DLLs cross a C ABI boundary and must not be link-time-optimized with the
+# engine binary. /GL + /LTCG across a DLL boundary causes the optimizer to make
+# invalid assumptions about function-pointer callbacks registered at runtime,
+# which silently breaks tick callbacks and GetAsyncKeyState-based input polling.
+function(configure_mod_target target)
+  if (MSVC)
+    target_compile_options(${target} PRIVATE
+      $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:C,CXX>>:/W3>
+      $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/W0>
+      $<$<COMPILE_LANGUAGE:C,CXX>:/MP>
+      $<$<COMPILE_LANGUAGE:C,CXX>:/FS>
+      $<$<COMPILE_LANGUAGE:C,CXX>:/GS>
+      $<$<COMPILE_LANGUAGE:CXX>:/EHsc>
+      $<$<COMPILE_LANGUAGE:CXX>:/GR>
+      $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:C,CXX>>:/Od>
+      $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/O2 /Oi /GT /GF>
+    )
+    # Deliberately no /GL here — mod DLLs must not participate in LTCG with the engine.
+
+    get_filename_component(_vc_bin   "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    get_filename_component(_vc_host  "${_vc_bin}"            DIRECTORY)
+    get_filename_component(_vc_bin2  "${_vc_host}"           DIRECTORY)
+    get_filename_component(_vc_tools "${_vc_bin2}"           DIRECTORY)
+
+    set(_winsdk_um_x64   "")
+    set(_winsdk_ucrt_x64 "")
+    if(CMAKE_RC_COMPILER)
+      get_filename_component(_rc_x64    "${CMAKE_RC_COMPILER}" DIRECTORY)
+      get_filename_component(_rc_ver    "${_rc_x64}"           DIRECTORY)
+      get_filename_component(_rc_bin    "${_rc_ver}"           DIRECTORY)
+      get_filename_component(_kits_root "${_rc_bin}"           DIRECTORY)
+      get_filename_component(_sdk_ver   "${_rc_ver}"           NAME)
+      set(_winsdk_um_x64   "${_kits_root}/lib/${_sdk_ver}/um/x64")
+      set(_winsdk_ucrt_x64 "${_kits_root}/lib/${_sdk_ver}/ucrt/x64")
+    endif()
+
+    target_link_options(${target} PRIVATE
+      "/LIBPATH:${_vc_tools}/lib/x64"
+      "/LIBPATH:${_vc_tools}/atlmfc/lib/x64"
+      $<$<BOOL:${_winsdk_um_x64}>:/LIBPATH:${_winsdk_um_x64}>
+      $<$<BOOL:${_winsdk_ucrt_x64}>:/LIBPATH:${_winsdk_ucrt_x64}>
+    )
+  endif()
+
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    target_compile_options(${target} PRIVATE
+      $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:C,CXX>>:-O0 -Wall>
+      $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:-O2 -w>
+    )
+    # Deliberately no -flto for mod targets.
+  endif()
+endfunction()
+
 
 # ---
-# Configuration
+
 # ---
 set(MINECRAFT_SHARED_DEFINES
   _LARGE_WORLDS

@@ -16,7 +16,7 @@ set_target_properties(DynamicLights PROPERTIES
     MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
 )
 
-configure_compiler_target(DynamicLights)
+configure_mod_target(DynamicLights)
 
 # After build, copy DynamicLights.dll into the mods/ subdirectory next to the client exe
 add_custom_command(TARGET DynamicLights POST_BUILD
