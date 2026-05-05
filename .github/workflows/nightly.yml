@@ -1,104 +1,70 @@
-name: Nightly Release
+name: Nightly Build
 
 on:
-  workflow_dispatch: 
-  push:
-    branches:
-    - 'main'
-    paths-ignore:
-      - '.gitignore'
-      - '*.md'
-      - '.github/**'
-      - '!.github/workflows/nightly.yml'
-
-permissions:
-  contents: write
-
-concurrency:
-  group: nightly
-  cancel-in-progress: true
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"
+      timezone: "America/Chicago"
 
 jobs:
   build:
-    runs-on: windows-latest
-
-    strategy:
-      matrix:
-        platform: [Windows64]
+    name: Build MeowMod Windows Zip
+    runs-on: [self-hosted, Windows, X64]
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v6
+      - name: Checkout source
+        uses: actions/checkout@v6
 
-    - name: Set platform lowercase
-      run: echo "MATRIX_PLATFORM=$('${{ matrix.platform }}'.ToLower())" >> $env:GITHUB_ENV
+      - name: Configure CMake
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 
-    - name: Setup MSVC
-      uses: ilammy/msvc-dev-cmd@v1
+      - name: Build Release
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --target Minecraft.Client
 
-    - name: Setup CMake
-      uses: lukka/get-cmake@latest
-    
-    - name: Run CMake
-      uses: lukka/run-cmake@v10
-      env:
-        VCPKG_ROOT: "" # Disable vcpkg for CI builds
-      with:
-        configurePreset: ${{ env.MATRIX_PLATFORM }}
-        buildPreset: ${{ env.MATRIX_PLATFORM }}-release
-        buildPresetAdditionalArgs: "['--target', 'Minecraft.Client']"
+      - name: Package build
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force package | Out-Null
+          New-Item -ItemType Directory -Force package\mods | Out-Null
+          New-Item -ItemType Directory -Force dist | Out-Null
 
-    - name: Zip Build
-      run: 7z a -r LCE${{ matrix.platform }}.zip ./build/${{ env.MATRIX_PLATFORM }}/Minecraft.Client/Release/* "-x!*.ipdb" "-x!*.iobj"
+          $exe = Get-ChildItem -Path build -Recurse -Filter "Minecraft.Client.exe" | Select-Object -First 1
 
-    - name: Stage artifacts
-      run: |
-        New-Item -ItemType Directory -Force -Path staging
-        Copy-Item LCE${{ matrix.platform }}.zip staging/
+          if (-not $exe) {
+            Write-Error "Could not find Minecraft.Client.exe. Change the exe name in nightly.yml."
+            exit 1
+          }
 
-    - name: Stage exe and pdb
-      if: matrix.platform == 'Windows64'
-      run: |
-        Copy-Item ./build/${{ env.MATRIX_PLATFORM }}/Minecraft.Client/Release/Minecraft.Client.exe staging/
+          Copy-Item $exe.FullName package\
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v6
-      with:
-        name: build-${{ matrix.platform }}
-        path: staging/*
+          Get-ChildItem $exe.Directory.FullName -Filter "*.dll" -ErrorAction SilentlyContinue | Copy-Item -Destination package\ -Force
 
-  release:
-    needs: build
-    runs-on: ubuntu-latest
+          if (Test-Path "mods") {
+            Copy-Item "mods\*" "package\mods\" -Recurse -Force
+          }
 
-    steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v7
-      with:
-        path: artifacts
-        merge-multiple: true
+          @"
+          MeowMod Nightly Build
 
-    - name: Update release
-      uses: andelf/nightly-release@main
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: nightly
-        name: Nightly Client Release
-        body: |
-          Requires at least Windows 7 and DirectX 11 compatible GPU to run.
-          
-          # 🚨 First time here? 🚨
-          If you've never downloaded the game before, you need to download `LCEWindows64.zip` and extract it to the folder where you'd like to keep the game. The other files are included in this `.zip` file!
-        files: |
-          artifacts/*
+          Commit:
+          $env:GITHUB_SHA
 
-  cleanup:
-    needs: [build, release]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-    - name: Cleanup artifacts
-      uses: geekyeggo/delete-artifact@v5
-      with:
-        name: build-*
+          How to use:
+          1. Extract this zip.
+          2. Add any required legal Minecraft/LCE runtime files or assets locally.
+          3. Put mod DLLs inside the mods folder.
+          4. Run Minecraft.Client.exe.
+          "@ | Out-File package\README.txt -Encoding utf8
+
+          Compress-Archive -Path package\* -DestinationPath dist\MeowMod-Nightly-Windows.zip -Force
+
+      - name: Upload nightly zip
+        uses: actions/upload-artifact@v7
+        with:
+          name: MeowMod-Nightly-Windows
+          path: dist/MeowMod-Nightly-Windows.zip
+          retention-days: 30
