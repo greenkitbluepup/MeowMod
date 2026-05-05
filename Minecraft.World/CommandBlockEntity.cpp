@@ -4,6 +4,7 @@
 #include "net.minecraft.commands.h"
 #include "..\Minecraft.Client\MinecraftServer.h"
 #include "CommandBlockEntity.h"
+#include "ContentHooks.h"
 
 CommandBlockEntity::CommandBlockEntity()
 {
@@ -25,24 +26,16 @@ wstring CommandBlockEntity::getCommand()
 
 int CommandBlockEntity::performCommand(Level *level)
 {
-#if 0
-	if (level->isClientSide)
-	{
+   if (!level || level->isClientSide)
 		return 0;
+
+	if (g_executeModCommandText)
+	{
+		bool ok = g_executeModCommandText(static_cast<void*>(this), command.c_str());
+		return ok ? 1 : 0;
 	}
 
-	MinecraftServer *instance = MinecraftServer::getInstance();
-	if (instance != nullptr && instance->isCommandBlockEnabled())
-	{
-		CommandDispatcher *commandDispatcher = instance->getCommandDispatcher();
-		return commandDispatcher->performCommand(dynamic_pointer_cast<CommandSender>(shared_from_this()), command, byteArray() );
-	}
 	return 0;
-#else
-	// 4J-JEV: Cannot decide what to do with the command field.
-	assert(false);
-	return 0;
-#endif
 }
 
 wstring CommandBlockEntity::getName()

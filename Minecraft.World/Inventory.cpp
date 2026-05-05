@@ -15,10 +15,12 @@ const int Inventory::SELECTION_SIZE = 9;
 
 // 4J Stu - The Pllayer is managed by shared_ptrs elsewhere, but it owns us so we don't want to also
 // keep a shared_ptr of it. If we pass it on we should use shared_from_this() though
-Inventory::Inventory(Player *player)
+Inventory::Inventory(Player* player)
 {
-	items = ItemInstanceArray( INVENTORY_SIZE );
-	armor = ItemInstanceArray( 4 );
+	items = ItemInstanceArray(INVENTORY_SIZE);
+	armor = ItemInstanceArray(4);
+
+	offhand = nullptr;
 
 	selected = 0;
 
@@ -43,6 +45,28 @@ shared_ptr<ItemInstance> Inventory::getSelected()
 		return items[selected];
 	}
 	return nullptr;
+}
+
+shared_ptr<ItemInstance> Inventory::getOffhand()
+{
+	return offhand;
+}
+
+void Inventory::setOffhand(shared_ptr<ItemInstance> item)
+{
+	offhand = item;
+	changed = true;
+}
+
+void Inventory::swapSelectedWithOffhand()
+{
+	if (selected < SELECTION_SIZE && selected >= 0)
+	{
+		shared_ptr<ItemInstance> tmp = items[selected];
+		items[selected] = offhand;
+		offhand = tmp;
+		changed = true;
+	}
 }
 
 // 4J-PB - Added for the in-game tooltips
@@ -524,12 +548,23 @@ ListTag<CompoundTag> *Inventory::save(ListTag<CompoundTag> *listTag)
 	{
 		if (armor[i] != nullptr)
 		{
-			CompoundTag *tag = new CompoundTag();
+			CompoundTag* tag = new CompoundTag();
 			tag->putByte(L"Slot", static_cast<byte>(i + 100));
 			armor[i]->save(tag);
 			listTag->add(tag);
 		}
 	}
+
+	// Modern offhand slot.
+	// Use 150 to avoid vanilla inventory slots 0-35 and armor slots 100-103.
+	if (offhand != nullptr)
+	{
+		CompoundTag* tag = new CompoundTag();
+		tag->putByte(L"Slot", static_cast<byte>(150));
+		offhand->save(tag);
+		listTag->add(tag);
+	}
+
 	return listTag;
 }
 
@@ -546,17 +581,20 @@ void Inventory::load(ListTag<CompoundTag> *inventoryList)
 		armor.data = nullptr;
 
 	}
-	items = ItemInstanceArray( INVENTORY_SIZE );
-	armor = ItemInstanceArray( 4 );
+	items = ItemInstanceArray(INVENTORY_SIZE);
+	armor = ItemInstanceArray(4);
+	offhand = nullptr;
+
 	for (int i = 0; i < inventoryList->size(); i++)
 	{
-		CompoundTag *tag = inventoryList->get(i);
+		CompoundTag* tag = inventoryList->get(i);
 		unsigned int slot = tag->getByte(L"Slot") & 0xff;
-		shared_ptr<ItemInstance> item = shared_ptr<ItemInstance>( ItemInstance::fromTag(tag) );
+		shared_ptr<ItemInstance> item = shared_ptr<ItemInstance>(ItemInstance::fromTag(tag));
 		if (item != nullptr)
 		{
 			if (slot >= 0 && slot < items.length) items[slot] = item;
 			if (slot >= 100 && slot < armor.length + 100) armor[slot - 100] = item;
+			if (slot == 150) offhand = item;
 		}
 	}
 }

@@ -47,7 +47,7 @@ configure_compiler_target(Minecraft.Client)
 
 set_target_properties(Minecraft.Client PROPERTIES
   OUTPUT_NAME "Minecraft.Client"
-  VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:Minecraft.Client>"
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/Minecraft.Client/Debug"
 )
 
 target_link_libraries(Minecraft.Client PRIVATE

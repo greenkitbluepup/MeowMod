@@ -3,16 +3,301 @@
 #include "UIScene_HUD.h"
 #include "UISplitScreenHelpers.h"
 #include "BossMobGuiInfo.h"
+#include "..\..\AbstractContainerScreen.h"
 #include "..\..\Minecraft.h"
 #include "..\..\MultiplayerLocalPlayer.h"
+#include "..\..\TexturePackRepository.h"
+#include "..\..\TexturePack.h"
 #include "..\..\..\Minecraft.World\net.minecraft.world.entity.boss.enderdragon.h"
 #include "..\..\EnderDragonRenderer.h"
 #include "..\..\..\Minecraft.World\net.minecraft.world.inventory.h"
 #include "..\..\..\Minecraft.World\StringHelpers.h"
 
+namespace
+{
+   constexpr float JAVA_HOTBAR_ITEM_SIZE_PX = 16.0f;
+	constexpr float JAVA_OFFHAND_ITEM_DX_PX = -29.0f;
+	constexpr float JAVA_OFFHAND_ITEM_DY_PX = 0.0f;
+	constexpr float JAVA_OFFHAND_FRAME_DX_PX = -32.0f;
+	constexpr float JAVA_OFFHAND_FRAME_DY_PX = -4.0f;
+	constexpr float JAVA_OFFHAND_FRAME_W_PX = 29.0f;
+	constexpr float JAVA_OFFHAND_FRAME_H_PX = 24.0f;
+		constexpr float OFFHAND_POP_DURATION = 5.0f;
+
+		void applyOffhandPopTransform(const CustomDrawData& region, float popTime)
+		{
+			if(popTime <= 0.0f)
+				return;
+
+			const float w = region.x1 - region.x0;
+			const float h = region.y1 - region.y0;
+			const float cx = region.x0 + w * 0.5f;
+			const float cy = region.y0 + h * 0.75f;
+			const float squeeze = 1.0f + (popTime / OFFHAND_POP_DURATION);
+
+			glTranslatef(cx, cy, 0.0f);
+			glScalef(1.0f / squeeze, (squeeze + 1.0f) * 0.5f, 1.0f);
+			glTranslatef(-cx, -cy, 0.0f);
+		}
+
+	float getHudSlotAlpha(int iPad)
+	{
+		unsigned char ucAlpha = app.GetGameSettings(ProfileManager.GetPrimaryPad(), eGameSetting_InterfaceOpacity);
+		float fVal;
+
+		if(ucAlpha < 80)
+		{
+			unsigned int uiOpacityTimer = app.GetOpacityTimer(iPad);
+			if(uiOpacityTimer != 0)
+			{
+				if(uiOpacityTimer < 10)
+				{
+					float fStep = (80.0f - static_cast<float>(ucAlpha)) / 10.0f;
+					fVal = 0.01f * (80.0f - ((10.0f - static_cast<float>(uiOpacityTimer)) * fStep));
+				}
+				else
+				{
+					fVal = 0.01f * 80.0f;
+				}
+			}
+			else
+			{
+				fVal = 0.01f * static_cast<float>(ucAlpha);
+			}
+		}
+		else
+		{
+			fVal = 0.01f * static_cast<float>(ucAlpha);
+		}
+
+		return fVal;
+	}
+
+	bool hasTextureCandidate(TexturePack *pack, const wchar_t *candidate)
+	{
+		wstring normalized = candidate;
+		while(!normalized.empty() && (normalized[0] == L'/' || normalized[0] == L'\\'))
+			normalized.erase(normalized.begin());
+
+		if(pack)
+		{
+			if(pack->hasFile(L"res/" + normalized, false) ||
+				pack->hasFile(normalized, false) ||
+				pack->hasFile(L"/" + normalized, false) ||
+				pack->hasFile(L"\\" + normalized, false))
+			{
+				return true;
+			}
+		}
+
+		if(app.hasArchiveFile((L"1_2_2/" + normalized).c_str()) ||
+			app.hasArchiveFile(normalized.c_str()) ||
+			app.hasArchiveFile(candidate))
+		{
+			return true;
+		}
+
+		return false;
+	}
+
+	const wchar_t *resolveOffhandTexturePath()
+	{
+		static int s_resolved = 0;
+		static wstring s_path;
+		if(s_resolved != 0)
+			return s_path.empty() ? nullptr : s_path.c_str();
+
+		s_resolved = 1;
+
+		Minecraft *pMinecraft = Minecraft::GetInstance();
+		TexturePack *pack = (pMinecraft && pMinecraft->skins) ? pMinecraft->skins->getSelected() : nullptr;
+
+		const wchar_t *candidates[] =
+		{
+			L"/gui/offhand.png",
+			L"/gui/Offhand.png",
+			L"gui/offhand.png",
+			L"gui/Offhand.png"
+		};
+
+		for(const wchar_t *candidate : candidates)
+		{
+			if(hasTextureCandidate(pack, candidate))
+			{
+				s_path = candidate;
+				while(!s_path.empty() && (s_path[0] == L'/' || s_path[0] == L'\\'))
+					s_path.erase(s_path.begin());
+				return s_path.c_str();
+			}
+		}
+
+		return nullptr;
+	}
+
+	const wchar_t *resolveWidgetsTexturePath()
+	{
+		static int s_resolved = 0;
+		static wstring s_path;
+		if(s_resolved != 0)
+			return s_path.empty() ? nullptr : s_path.c_str();
+
+		s_resolved = 1;
+
+		Minecraft *pMinecraft = Minecraft::GetInstance();
+		TexturePack *pack = (pMinecraft && pMinecraft->skins) ? pMinecraft->skins->getSelected() : nullptr;
+
+		const wchar_t *candidates[] =
+		{
+			L"/gui/widgets.png",
+			L"gui/widgets.png"
+		};
+
+		for(const wchar_t *candidate : candidates)
+		{
+			if(hasTextureCandidate(pack, candidate))
+			{
+				s_path = candidate;
+				while(!s_path.empty() && (s_path[0] == L'/' || s_path[0] == L'\\'))
+					s_path.erase(s_path.begin());
+				return s_path.c_str();
+			}
+		}
+
+		return nullptr;
+	}
+
+	bool drawJavaOffhandFrameFromWidgets(const CustomDrawData &region, float alpha)
+	{
+		Minecraft *pMinecraft = Minecraft::GetInstance();
+		if(!pMinecraft || !pMinecraft->textures)
+			return false;
+
+		const wchar_t *widgetsTexturePath = resolveWidgetsTexturePath();
+		if(widgetsTexturePath)
+		{
+			pMinecraft->textures->bindTexture(widgetsTexturePath);
+
+			constexpr float TEX_W = 256.0f;
+			constexpr float TEX_H = 256.0f;
+         constexpr float u0 = (24.0f + 0.5f) / TEX_W;
+			constexpr float v0 = (22.0f + 1.5f) / TEX_H;
+			constexpr float u1 = (24.0f + 29.0f - 0.5f) / TEX_W;
+			constexpr float v1 = (22.0f + 24.0f - 0.5f) / TEX_H;
+
+			RenderManager.StateSetBlendEnable(true);
+			RenderManager.StateSetBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+          glDepthMask(false);
+			glDisable(GL_DEPTH_TEST);
+			glEnable(GL_TEXTURE_2D);
+			glColor4f(1.0f, 1.0f, 1.0f, alpha);
+
+			Tesselator *t = Tesselator::getInstance();
+			t->begin();
+			t->vertexUV(region.x0, region.y1, 0.0f, u0, v1);
+			t->vertexUV(region.x1, region.y1, 0.0f, u1, v1);
+			t->vertexUV(region.x1, region.y0, 0.0f, u1, v0);
+			t->vertexUV(region.x0, region.y0, 0.0f, u0, v0);
+			t->end();
+			glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+            glEnable(GL_DEPTH_TEST);
+           glDepthMask(true);
+			return true;
+		}
+
+		const wchar_t *offhandTexture = resolveOffhandTexturePath();
+		if(offhandTexture)
+		{
+			pMinecraft->textures->bindTexture(offhandTexture);
+			RenderManager.StateSetBlendEnable(true);
+			RenderManager.StateSetBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+          glDepthMask(false);
+			glDisable(GL_DEPTH_TEST);
+			glEnable(GL_TEXTURE_2D);
+			glColor4f(1.0f, 1.0f, 1.0f, alpha);
+			constexpr float OFFHAND_TEX_W = 22.0f;
+			constexpr float OFFHAND_TEX_H = 22.0f;
+			constexpr float u0 = 0.5f / OFFHAND_TEX_W;
+			constexpr float v0 = 1.5f / OFFHAND_TEX_H;
+			constexpr float u1 = (OFFHAND_TEX_W - 0.5f) / OFFHAND_TEX_W;
+			constexpr float v1 = (OFFHAND_TEX_H - 0.5f) / OFFHAND_TEX_H;
+
+			Tesselator *t = Tesselator::getInstance();
+			t->begin();
+            t->vertexUV(region.x0, region.y1, 0.0f, u0, v1);
+			t->vertexUV(region.x1, region.y1, 0.0f, u1, v1);
+			t->vertexUV(region.x1, region.y0, 0.0f, u1, v0);
+			t->vertexUV(region.x0, region.y0, 0.0f, u0, v0);
+			t->end();
+			glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+            glEnable(GL_DEPTH_TEST);
+           glDepthMask(true);
+			return true;
+		}
+
+		return false;
+	}
+
+	void drawFallbackSlotFrame(const CustomDrawData &region, float alpha)
+	{
+     const int x0 = static_cast<int>(region.x0);
+		const int y0 = static_cast<int>(region.y0);
+		const int x1 = static_cast<int>(region.x1);
+		const int y1 = static_cast<int>(region.y1);
+		const int width = x1 - x0;
+		const int height = y1 - y0;
+		const int border = 1;
+		if(width <= (border * 2) || height <= (border * 2))
+			return;
+
+		RenderManager.StateSetBlendEnable(true);
+		RenderManager.StateSetBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glDepthMask(false);
+		glDisable(GL_DEPTH_TEST);
+
+		auto scaleColor = [alpha](int color)
+		{
+			int r = static_cast<int>(((color >> 16) & 0xff) * alpha);
+			int g = static_cast<int>(((color >> 8) & 0xff) * alpha);
+			int b = static_cast<int>((color & 0xff) * alpha);
+			return (r << 16) | (g << 8) | b;
+		};
+
+		auto fillRect = [](Tesselator *t, int x, int y, int w, int h, int c)
+		{
+			t->begin();
+			t->color(c);
+			t->vertex(static_cast<float>(x), static_cast<float>(y), 0.0f);
+			t->vertex(static_cast<float>(x), static_cast<float>(y + h), 0.0f);
+			t->vertex(static_cast<float>(x + w), static_cast<float>(y + h), 0.0f);
+			t->vertex(static_cast<float>(x + w), static_cast<float>(y), 0.0f);
+			t->end();
+		};
+
+		glDisable(GL_TEXTURE_2D);
+
+		Tesselator *t = Tesselator::getInstance();
+		fillRect(t, x0 + border, y0 + border, width - (border * 2), height - (border * 2), scaleColor(0x111111));
+		fillRect(t, x0, y0, width, border, scaleColor(0xcfcfcf));
+		fillRect(t, x0, y0, border, height, scaleColor(0xcfcfcf));
+		fillRect(t, x0, y1 - border, width, border, scaleColor(0x3d3d3d));
+		fillRect(t, x1 - border, y0, border, height, scaleColor(0x3d3d3d));
+
+        glEnable(GL_DEPTH_TEST);
+       glDepthMask(true);
+		glEnable(GL_TEXTURE_2D);
+	}
+}
+
 UIScene_HUD::UIScene_HUD(int iPad, void *initData, UILayer *parentLayer) : UIScene(iPad, parentLayer)
 {
 	m_bSplitscreen = false;
+	m_seenOffhandCustomDraw = false;
+	m_slot0Data.valid = false;
+	m_lastOffhandPresent = false;
+	m_lastOffhandId = -1;
+ m_lastOffhandAux = -1;
+	m_lastOffhandCount = 0;
+	m_offhandPopTime = 0.0f;
 
 	// Setup all the Iggy references we need for this scene
 	initialiseMovie();
@@ -116,6 +401,13 @@ void UIScene_HUD::updateSafeZone()
 void UIScene_HUD::tick()
 {
 	UIScene::tick();
+  if(m_offhandPopTime > 0.0f)
+	{
+		m_offhandPopTime -= 1.0f;
+		if(m_offhandPopTime < 0.0f)
+			m_offhandPopTime = 0.0f;
+	}
+
 	if(getMovie() && app.GetGameStarted())
 	{
 		Minecraft *pMinecraft = Minecraft::GetInstance();
@@ -162,6 +454,22 @@ void UIScene_HUD::customDraw(IggyCustomDrawCallbackRegion *region)
 	Minecraft *pMinecraft = Minecraft::GetInstance();
 	if(pMinecraft->localplayers[m_iPad] == nullptr || pMinecraft->localgameModes[m_iPad] == nullptr) return;
 
+	if (wcscmp(static_cast<wchar_t*>(region->name), L"slot_offhand") == 0)
+	{
+      m_seenOffhandCustomDraw = true;
+
+		Slot* invSlot = pMinecraft->localplayers[m_iPad]->inventoryMenu->getSlot(InventoryMenu::OFFHAND_SLOT);
+		shared_ptr<ItemInstance> item = invSlot->getItem();
+
+		if (item)
+		{
+            float fVal = getHudSlotAlpha(m_iPad);
+			customDrawSlotControl(region,m_iPad,item,fVal,item->isFoil(),true);
+		}
+
+		return;
+	}
+
 	int slot = -1;
 	swscanf(static_cast<wchar_t *>(region->name),L"slot_%d",&slot);
 	if (slot == -1)
@@ -170,38 +478,29 @@ void UIScene_HUD::customDraw(IggyCustomDrawCallbackRegion *region)
 	}
 	else
 	{
+     if (slot >= 0)
+		{
+			CustomDrawData *d = ui.calculateCustomDraw(region);
+			if (d)
+			{
+             if(!m_slot0Data.valid || d->x0 < m_slot0Data.x0)
+				{
+					m_slot0Data.x0 = d->x0;
+					m_slot0Data.y0 = d->y0;
+					m_slot0Data.x1 = d->x1;
+					m_slot0Data.y1 = d->y1;
+					memcpy(m_slot0Data.mat, d->mat, sizeof(d->mat));
+					m_slot0Data.valid = true;
+				}
+				delete d;
+			}
+		}
+
 		Slot *invSlot = pMinecraft->localplayers[m_iPad]->inventoryMenu->getSlot(InventoryMenu::USE_ROW_SLOT_START + slot);
 		shared_ptr<ItemInstance> item = invSlot->getItem();
 		if(item != nullptr)
 		{
-			unsigned char ucAlpha=app.GetGameSettings(ProfileManager.GetPrimaryPad(),eGameSetting_InterfaceOpacity);
-			float fVal;
-
-			if(ucAlpha<80)
-			{
-				// check if we have the timer running for the opacity
-				unsigned int uiOpacityTimer=app.GetOpacityTimer(m_iPad);
-				if(uiOpacityTimer!=0)
-				{
-					if(uiOpacityTimer<10)
-					{
-						float fStep=(80.0f-static_cast<float>(ucAlpha))/10.0f;
-						fVal=0.01f*(80.0f-((10.0f-static_cast<float>(uiOpacityTimer))*fStep));
-					}
-					else
-					{
-						fVal=0.01f*80.0f;
-					}
-				}
-				else
-				{
-					fVal=0.01f*static_cast<float>(ucAlpha);
-				}
-			}
-			else
-			{
-				fVal=0.01f*static_cast<float>(ucAlpha);
-			}
+            float fVal = getHudSlotAlpha(m_iPad);
 			customDrawSlotControl(region,m_iPad,item,fVal,item->isFoil(),true);
 		}
 	}
@@ -245,6 +544,11 @@ void UIScene_HUD::handleReload()
 	m_iHeartOffsetIndex = -1;
 	m_bHealthAbsorbActive = false;
 	m_iHorseMaxHealth = -1;
+	m_lastOffhandPresent = false;
+	m_lastOffhandId = -1;
+ m_lastOffhandAux = -1;
+	m_lastOffhandCount = 0;
+	m_offhandPopTime = 0.0f;
 
 	m_labelDisplayName.setVisible(m_lastShowDisplayName);
 
@@ -674,6 +978,9 @@ void UIScene_HUD::SetHealthAbsorb(int healthAbsorb)
 
 void UIScene_HUD::render(S32 width, S32 height, C4JRender::eViewportType viewport)
 {
+  m_seenOffhandCustomDraw = false;
+	m_slot0Data.valid = false;
+
 	if(m_bSplitscreen)
 	{
 		S32 xPos = 0;
@@ -756,6 +1063,88 @@ void UIScene_HUD::render(S32 width, S32 height, C4JRender::eViewportType viewpor
 	{
 		UIScene::render(width, height, viewport);
 	}
+
+	if(!m_seenOffhandCustomDraw && m_slot0Data.valid)
+	{
+		Minecraft *pMinecraft = Minecraft::GetInstance();
+     if(pMinecraft->localplayers[m_iPad] != nullptr &&
+			pMinecraft->localplayers[m_iPad]->inventoryMenu != nullptr)
+		{
+            Slot *invSlot = pMinecraft->localplayers[m_iPad]->inventoryMenu->getSlot(InventoryMenu::OFFHAND_SLOT);
+			shared_ptr<ItemInstance> item = invSlot ? invSlot->getItem() : shared_ptr<ItemInstance>();
+
+			const bool hasOffhandItem = (item != nullptr && item->count > 0);
+         int offhandId = hasOffhandItem ? item->id : -1;
+			int offhandAux = hasOffhandItem ? item->getAuxValue() : -1;
+
+			const bool toggledPresence = (hasOffhandItem != m_lastOffhandPresent);
+			const bool changedIdentity = hasOffhandItem && m_lastOffhandPresent &&
+				(offhandId != m_lastOffhandId || offhandAux != m_lastOffhandAux);
+
+			if(toggledPresence || changedIdentity)
+			{
+              m_offhandPopTime = OFFHAND_POP_DURATION;
+			}
+
+			m_lastOffhandPresent = hasOffhandItem;
+			if(!hasOffhandItem)
+			{
+				m_lastOffhandId = -1;
+             m_lastOffhandAux = -1;
+				m_lastOffhandCount = 0;
+				return;
+			}
+
+         m_lastOffhandId = offhandId;
+			m_lastOffhandAux = offhandAux;
+			m_lastOffhandCount = item->count;
+
+            const float slotW = m_slot0Data.x1 - m_slot0Data.x0;
+			const float slotH = m_slot0Data.y1 - m_slot0Data.y0;
+			const float scaleX = slotW / JAVA_HOTBAR_ITEM_SIZE_PX;
+			const float scaleY = slotH / JAVA_HOTBAR_ITEM_SIZE_PX;
+
+			CustomDrawData offhandData;
+           const float itemDx = JAVA_OFFHAND_ITEM_DX_PX * scaleX;
+			const float itemDy = JAVA_OFFHAND_ITEM_DY_PX * scaleY;
+			offhandData.x0 = m_slot0Data.x0 + itemDx;
+			offhandData.y0 = m_slot0Data.y0 + itemDy;
+			offhandData.x1 = m_slot0Data.x1 + itemDx;
+			offhandData.y1 = m_slot0Data.y1 + itemDy;
+			memcpy(offhandData.mat, m_slot0Data.mat, sizeof(offhandData.mat));
+
+			CustomDrawData offhandFrameData;
+           offhandFrameData.x0 = m_slot0Data.x0 + (JAVA_OFFHAND_FRAME_DX_PX * scaleX);
+         offhandFrameData.y0 = m_slot0Data.y0 + (JAVA_OFFHAND_FRAME_DY_PX * scaleY) + 1.0f;
+			offhandFrameData.x1 = offhandFrameData.x0 + (JAVA_OFFHAND_FRAME_W_PX * scaleX);
+			offhandFrameData.y1 = offhandFrameData.y0 + (JAVA_OFFHAND_FRAME_H_PX * scaleY);
+			memcpy(offhandFrameData.mat, m_slot0Data.mat, sizeof(offhandFrameData.mat));
+
+			float fVal = getHudSlotAlpha(m_iPad);
+
+			ui.setupCustomDrawGameState();
+           ui.setupCustomDrawMatrices(this, &offhandFrameData);
+			if(!drawJavaOffhandFrameFromWidgets(offhandFrameData, fVal))
+			{
+				drawFallbackSlotFrame(offhandFrameData, fVal);
+			}
+
+			ui.setupCustomDrawMatrices(this, &offhandData);
+			shared_ptr<MultiplayerLocalPlayer> oldPlayer = pMinecraft->player;
+			if(m_iPad >= 0 && m_iPad < XUSER_MAX_COUNT)
+				pMinecraft->player = pMinecraft->localplayers[m_iPad];
+
+			glPushMatrix();
+			applyOffhandPopTransform(offhandData, m_offhandPopTime);
+			_customDrawSlotControl(&offhandData, m_iPad, item, fVal, item->isFoil(), true, false);
+			glPopMatrix();
+
+			pMinecraft->player = oldPlayer;
+
+			ui.endCustomDrawGameState();
+		}
+	}
+
 }
 
 void UIScene_HUD::handleTimerComplete(int id)
@@ -879,6 +1268,14 @@ void UIScene_HUD::handleGameTick()
 			m_parentLayer->showComponent(m_iPad, eUIScene_HUD,false);
 			return;
 		}
+
+		if (pMinecraft->screen != nullptr &&
+			dynamic_cast<AbstractContainerScreen*>(pMinecraft->screen) != nullptr)
+		{
+			m_parentLayer->showComponent(m_iPad, eUIScene_HUD, false);
+			return;
+		}
+
 		m_parentLayer->showComponent(m_iPad, eUIScene_HUD,true);
 
 		updateFrameTick();

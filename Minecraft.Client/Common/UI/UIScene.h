@@ -228,6 +228,7 @@ private:
 	} CachedSlotDrawData;
 	vector<CachedSlotDrawData *> m_cachedSlotDraw;
 
+protected:
 	void _customDrawSlotControl(CustomDrawData *region, int iPad, shared_ptr<ItemInstance> item, float fAlpha, bool isFoil, bool bDecorations, bool usingCommandBuffer);
 
 public:

@@ -18,6 +18,22 @@
 #define INVENTORY_UPDATE_EFFECTS_TIMER_ID (10)
 #define INVENTORY_UPDATE_EFFECTS_TIMER_TIME (1000) // 1 second
 
+static void fillSolidRect(float x0, float y0, float x1, float y1, int color)
+{
+	glDisable(GL_TEXTURE_2D);
+
+	Tesselator *t = Tesselator::getInstance();
+	t->begin();
+	t->color(color);
+	t->vertex(x0, y0, 0.0f);
+	t->vertex(x0, y1, 0.0f);
+	t->vertex(x1, y1, 0.0f);
+	t->vertex(x1, y0, 0.0f);
+	t->end();
+
+	glEnable(GL_TEXTURE_2D);
+}
+
 UIScene_InventoryMenu::UIScene_InventoryMenu(int iPad, void *_initData, UILayer *parentLayer) : UIScene_AbstractContainerMenu(iPad, parentLayer)
 {
 	// Setup all the Iggy references we need for this scene
@@ -220,23 +236,135 @@ UIControl *UIScene_InventoryMenu::getSection(ESceneSection eSection)
 void UIScene_InventoryMenu::customDraw(IggyCustomDrawCallbackRegion *region)
 {
 	Minecraft *pMinecraft = Minecraft::GetInstance();
-	if(pMinecraft->localplayers[m_iPad] == nullptr || pMinecraft->localgameModes[m_iPad] == nullptr) return;
+    if(pMinecraft->localplayers[m_iPad] == nullptr || pMinecraft->localgameModes[m_iPad] == nullptr)
+		return;
 
-	if(wcscmp((wchar_t *)region->name,L"player")==0)
+	if(wcscmp((wchar_t *)region->name, L"player") == 0)
 	{
-		// Setup GDraw, normal game render states and matrices
-		CustomDrawData *customDrawRegion = ui.setupCustomDraw(this,region);
+		CustomDrawData *d = ui.calculateCustomDraw(region);
+		if(d)
+		{
+			m_playerRegionX0 = d->x0;
+			delete d;
+		}
+
+		CustomDrawData *customDrawRegion = ui.setupCustomDraw(this, region);
 		delete customDrawRegion;
 
 		m_playerPreview.render(region);
 
-		// Finish GDraw and anything else that needs to be finalised
 		ui.endCustomDraw(region);
+		return;
 	}
-	else
+
+	int slotId = -1;
+	if(swscanf(static_cast<wchar_t *>(region->name), L"slot_%d", &slotId) == 1)
 	{
-		UIScene_AbstractContainerMenu::customDraw(region);
+     // Capture one slot region each frame for transform matrix setup.
+		if(!m_bootsSlotData.valid || slotId == InventoryMenu::ARMOR_SLOT_END - 1)
+		{
+			CustomDrawData *d = ui.calculateCustomDraw(region);
+			if(d)
+			{
+				m_bootsSlotData.x0 = d->x0;
+				m_bootsSlotData.y0 = d->y0;
+				m_bootsSlotData.x1 = d->x1;
+				m_bootsSlotData.y1 = d->y1;
+				memcpy(m_bootsSlotData.mat, d->mat, sizeof(d->mat));
+				m_bootsSlotData.valid = true;
+				delete d;
+			}
+		}
+
+		// Important:
+		// Do NOT call UIScene_AbstractContainerMenu::customDraw(region) for slots.
+		// We draw all modern slot contents ourselves after the SWF render.
+		return;
 	}
+
+	// Let non-slot custom draw regions continue through the normal path.
+	UIScene_AbstractContainerMenu::customDraw(region);
+}
+
+void UIScene_InventoryMenu::render(S32 width, S32 height, C4JRender::eViewportType viewport)
+{
+  // Capture fresh SWF slot data every frame.
+	m_bootsSlotData.valid = false;
+
+  // Draw SWF first (input/callback shell), then override visuals with
+	// modern inventory background + C++ slot rendering.
+	UIScene_AbstractContainerMenu::render(width, height, viewport);
+
+	if(!m_bootsSlotData.valid || m_menu == nullptr)
+		return;
+
+	Minecraft *pMinecraft = Minecraft::GetInstance();
+	if(!pMinecraft || !pMinecraft->localplayers[m_iPad])
+		return;
+
+    constexpr float MODERN_INV_W = 176.0f;
+	constexpr float MODERN_INV_H = 166.0f;
+	constexpr float SLOT_ITEM_W = 16.0f;
+	constexpr float SLOT_ITEM_H = 16.0f;
+
+	const float leftPos = (static_cast<float>(m_movieWidth) - MODERN_INV_W) * 0.5f;
+	const float topPos = (static_cast<float>(m_movieHeight) - MODERN_INV_H) * 0.5f;
+
+	CustomDrawData bgData;
+	bgData.x0 = leftPos;
+	bgData.y0 = topPos;
+    bgData.x1 = leftPos + MODERN_INV_W;
+	bgData.y1 = topPos + MODERN_INV_H;
+	memcpy(bgData.mat, m_bootsSlotData.mat, sizeof(bgData.mat));
+
+	shared_ptr<MultiplayerLocalPlayer> oldPlayer = pMinecraft->player;
+	if(m_iPad >= 0 && m_iPad < XUSER_MAX_COUNT)
+		pMinecraft->player = pMinecraft->localplayers[m_iPad];
+
+	ui.setupCustomDrawGameState();
+
+	// Draw modern inventory background.
+	ui.setupCustomDrawMatrices(this, &bgData);
+  fillSolidRect(bgData.x0, bgData.y0, bgData.x1, bgData.y1, 0xc6c6c6);
+	pMinecraft->textures->bindTexture(L"gui/container/inventory.png");
+	RenderManager.StateSetBlendEnable(true);
+	RenderManager.StateSetBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glEnable(GL_TEXTURE_2D);
+	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+	Tesselator *t = Tesselator::getInstance();
+	t->begin();
+	t->vertexUV(bgData.x0, bgData.y1, 0.0f, 0.0f, 1.0f);
+	t->vertexUV(bgData.x1, bgData.y1, 0.0f, 1.0f, 1.0f);
+	t->vertexUV(bgData.x1, bgData.y0, 0.0f, 1.0f, 0.0f);
+	t->vertexUV(bgData.x0, bgData.y0, 0.0f, 0.0f, 0.0f);
+	t->end();
+	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+
+	// Draw all slot contents according to menu slot coordinates.
+	const unsigned int slotCount = m_menu->getSize();
+	for(unsigned int i = 0; i < slotCount; ++i)
+	{
+		Slot *slot = m_menu->getSlot(i);
+		if(!slot)
+			continue;
+
+		shared_ptr<ItemInstance> item = slot->getItem();
+		if(!item)
+			continue;
+
+		CustomDrawData slotData;
+     slotData.x0 = leftPos + static_cast<float>(slot->x);
+		slotData.y0 = topPos + static_cast<float>(slot->y);
+		slotData.x1 = slotData.x0 + SLOT_ITEM_W;
+		slotData.y1 = slotData.y0 + SLOT_ITEM_H;
+		memcpy(slotData.mat, m_bootsSlotData.mat, sizeof(slotData.mat));
+
+		ui.setupCustomDrawMatrices(this, &slotData);
+		_customDrawSlotControl(&slotData, m_iPad, item, 1.0f, item->isFoil(), true, false);
+	}
+
+	ui.endCustomDrawGameState();
+	pMinecraft->player = oldPlayer;
 }
 
 void UIScene_InventoryMenu::handleTimerComplete(int id)

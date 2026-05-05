@@ -1067,6 +1067,8 @@ void Level::sendTileUpdated(int x, int y, int z)
 	{
 		listener->tileChanged(x, y, z);
 	}
+	if (isClientSide && g_notifyTileChanged)
+		g_notifyTileChanged(x, y, z);
 }
 
 void Level::tileUpdated(int x, int y, int z, int tile)
@@ -2503,13 +2505,34 @@ void Level::tickEntities()
 			{
 				// Player is NOT derived from Mob in this codebase — check separately.
 				Player* player = static_cast<Player*>(e.get());
+
 				shared_ptr<ItemInstance> held = player->getCarriedItem();
 				if (held)
 				{
 					int tid = held->id;
 					if (tid >= 0 && tid < Tile::TILE_NUM_COUNT)
-						strength = Tile::lightEmission[tid];
+					{
+						int em = Tile::lightEmission[tid];
+						if (em > strength) strength = em;
+					}
 				}
+
+				// Modern offhand dynamic light support.
+				// Main hand and offhand both count. Whichever emits more light wins.
+				if (player->inventory)
+				{
+					shared_ptr<ItemInstance> offhand = player->inventory->getOffhand();
+					if (offhand)
+					{
+						int tid = offhand->id;
+						if (tid >= 0 && tid < Tile::TILE_NUM_COUNT)
+						{
+							int em = Tile::lightEmission[tid];
+							if (em > strength) strength = em;
+						}
+					}
+				}
+
 				for (int slot = 0; slot < 4; ++slot)
 				{
 					shared_ptr<ItemInstance> armor = player->getArmor(slot);

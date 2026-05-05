@@ -39,6 +39,7 @@
 #include "..\Minecraft.World\ProgressListener.h"
 #include "PS3\PS3Extras\ShutdownManager.h"
 #include "PlayerChunkMap.h"
+#include "..\Minecraft.Mods\ModLoader.h"
 
 WeighedTreasureArray ServerLevel::RANDOM_BONUS_ITEMS;
 
@@ -1016,6 +1017,13 @@ void ServerLevel::save(bool force, ProgressListener *progressListener, bool bAut
 // 4J Added
 void ServerLevel::saveToDisc(ProgressListener *progressListener, bool autosave)
 {
+ struct WorldSavePayload
+	{
+		int dimension;
+		int autosave;
+	} payload{ dimension ? dimension->id : 0, autosave ? 1 : 0 };
+	g_modLoader.emitEvent("world.save", this, &payload, sizeof(payload));
+
 	// 4J-PB - check that saves are enabled
 	if(StorageManager.GetSaveDisabled()) return;
 

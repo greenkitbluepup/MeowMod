@@ -32,6 +32,7 @@
 
 #include "..\Minecraft.World\LevelChunk.h"
 #include "LevelRenderer.h"
+#include "..\Minecraft.Mods\ModLoader.h"
 
 
 ServerPlayer::ServerPlayer(MinecraftServer *server, Level *level, const wstring& name, ServerPlayerGameMode *gameMode) : Player(level, name)
@@ -236,6 +237,12 @@ float ServerPlayer::getHeadHeight()
 
 void ServerPlayer::tick()
 {
+   struct PlayerTickPayload
+	{
+		int entityId;
+	} payload{ entityId };
+	g_modLoader.emitEvent("player.tick", this, &payload, sizeof(payload));
+
 	gameMode->tick();
 
 	if (invulnerableTime > 0) invulnerableTime--;

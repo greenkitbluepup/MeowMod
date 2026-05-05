@@ -21,6 +21,7 @@ public:
 	static const int INV_SLOT_END;
 	static const int USE_ROW_SLOT_START;
 	static const int USE_ROW_SLOT_END;
+	static const int OFFHAND_SLOT;
 
 public:
 	shared_ptr<CraftingContainer> craftSlots;

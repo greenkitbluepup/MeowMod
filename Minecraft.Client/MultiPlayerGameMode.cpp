@@ -282,6 +282,11 @@ void MultiPlayerGameMode::ensureHasSentCarriedItem()
 
 bool MultiPlayerGameMode::useItemOn(shared_ptr<Player> player, Level *level, shared_ptr<ItemInstance> item, int x, int y, int z, int face, Vec3 *hit, bool bTestUseOnly, bool *pbUsedItem)
 {
+   return useItemOnWithHand(player, level, item, InteractionHand::MAIN_HAND, x, y, z, face, hit, bTestUseOnly, pbUsedItem);
+}
+
+bool MultiPlayerGameMode::useItemOnWithHand(shared_ptr<Player> player, Level *level, shared_ptr<ItemInstance> item, InteractionHand hand, int x, int y, int z, int face, Vec3 *hit, bool bTestUseOnly, bool *pbUsedItem)
+{
 	if( pbUsedItem ) *pbUsedItem = false;	// Did we actually use the held item?
 
 	// 4J-PB - Adding a test only version to allow tooltips to be displayed
@@ -294,7 +299,7 @@ bool MultiPlayerGameMode::useItemOn(shared_ptr<Player> player, Level *level, sha
 	float clickZ = static_cast<float>(hit->z) - z;
 	bool didSomething = false;
 
-	if (!player->isSneaking() || player->getCarriedItem() == nullptr)
+   if (!player->isSneaking() || item == nullptr)
 	{
 		int t = level->getTile(x, y, z);	
 		if (t > 0 && player->isAllowedToUse(Tile::tiles[t]))
@@ -379,12 +384,27 @@ bool MultiPlayerGameMode::useItemOn(shared_ptr<Player> player, Level *level, sha
 	// Fix for #7904 - Gameplay: Players can dupe torches by throwing them repeatedly into water.
 	if(!bTestUseOnly)
 	{
-		connection->send(std::make_shared<UseItemPacket>(x, y, z, face, player->inventory->getSelected(), clickX, clickY, clickZ));
+        shared_ptr<ItemInstance> selected = player->inventory ? player->inventory->getSelected() : shared_ptr<ItemInstance>();
+		shared_ptr<ItemInstance> offhand = player->inventory ? player->inventory->getOffhand() : shared_ptr<ItemInstance>();
+		app.DebugPrintf(
+			"[OFFHAND_USE_CLIENT] hand=%d selected=%d:%d offhand=%d:%d\n",
+			hand == InteractionHand::OFF_HAND ? 1 : 0,
+			selected ? selected->id : -1,
+			selected ? selected->count : 0,
+			offhand ? offhand->id : -1,
+			offhand ? offhand->count : 0
+		);
+		connection->send(std::make_shared<UseItemPacket>(x, y, z, face, item, hand == InteractionHand::OFF_HAND ? 1 : 0, clickX, clickY, clickZ));
 	}
     return didSomething;
 }
 
 bool MultiPlayerGameMode::useItem(shared_ptr<Player> player, Level *level, shared_ptr<ItemInstance> item, bool bTestUseOnly)
+{
+ return useItemWithHand(player, level, item, InteractionHand::MAIN_HAND, bTestUseOnly);
+}
+
+bool MultiPlayerGameMode::useItemWithHand(shared_ptr<Player> player, Level *level, shared_ptr<ItemInstance> item, InteractionHand hand, bool bTestUseOnly)
 {
 	if(!player->isAllowedToUse(item)) return false;
 
@@ -410,10 +430,21 @@ bool MultiPlayerGameMode::useItem(shared_ptr<Player> player, Level *level, share
 		shared_ptr<ItemInstance> itemInstance = item->use(level, player);
 		if ((itemInstance != nullptr && itemInstance != item) || (itemInstance != nullptr && itemInstance->count != oldCount))
 		{
-			player->inventory->items[player->inventory->selected] = itemInstance;
-			if (itemInstance->count == 0)
+           if (hand == InteractionHand::OFF_HAND)
 			{
-				player->inventory->items[player->inventory->selected] = nullptr;
+				player->inventory->setOffhand(itemInstance);
+				if (itemInstance != nullptr && itemInstance->count == 0)
+				{
+					player->inventory->setOffhand(nullptr);
+				}
+			}
+			else
+			{
+				player->inventory->items[player->inventory->selected] = itemInstance;
+				if (itemInstance->count == 0)
+				{
+					player->inventory->items[player->inventory->selected] = nullptr;
+				}
 			}
 			result = true;
 		}
@@ -421,7 +452,17 @@ bool MultiPlayerGameMode::useItem(shared_ptr<Player> player, Level *level, share
 	
 	if(!bTestUseOnly)
 	{
-		connection->send(std::make_shared<UseItemPacket>(-1, -1, -1, 255, player->inventory->getSelected(), 0, 0, 0));
+        shared_ptr<ItemInstance> selected = player->inventory ? player->inventory->getSelected() : shared_ptr<ItemInstance>();
+		shared_ptr<ItemInstance> offhand = player->inventory ? player->inventory->getOffhand() : shared_ptr<ItemInstance>();
+		app.DebugPrintf(
+			"[OFFHAND_USE_CLIENT] hand=%d selected=%d:%d offhand=%d:%d\n",
+			hand == InteractionHand::OFF_HAND ? 1 : 0,
+			selected ? selected->id : -1,
+			selected ? selected->count : 0,
+			offhand ? offhand->id : -1,
+			offhand ? offhand->count : 0
+		);
+		connection->send(std::make_shared<UseItemPacket>(-1, -1, -1, 255, item, hand == InteractionHand::OFF_HAND ? 1 : 0, 0, 0, 0));
 	}
     return result;
 }
@@ -447,12 +488,22 @@ bool MultiPlayerGameMode::interact(shared_ptr<Player> player, shared_ptr<Entity>
 
 shared_ptr<ItemInstance> MultiPlayerGameMode::handleInventoryMouseClick(int containerId, int slotNum, int buttonNum, bool quickKeyHeld, shared_ptr<Player> player)
 {
-    short changeUid = player->containerMenu->backup(player->inventory);
+	short changeUid = player->containerMenu->backup(player->inventory);
 
-    shared_ptr<ItemInstance> clicked = player->containerMenu->clicked(slotNum, buttonNum, quickKeyHeld?AbstractContainerMenu::CLICK_QUICK_MOVE:AbstractContainerMenu::CLICK_PICKUP, player);
-    connection->send(std::make_shared<ContainerClickPacket>(containerId, slotNum, buttonNum, quickKeyHeld, clicked, changeUid));
+	shared_ptr<ItemInstance> clicked = player->containerMenu->clicked(slotNum, buttonNum, quickKeyHeld?AbstractContainerMenu::CLICK_QUICK_MOVE:AbstractContainerMenu::CLICK_PICKUP, player);
+	connection->send(std::make_shared<ContainerClickPacket>(containerId, slotNum, buttonNum, quickKeyHeld, clicked, changeUid));
 
-    return clicked;
+	return clicked;
+}
+
+void MultiPlayerGameMode::handleInventoryPickupAll(int containerId, int slotNum, shared_ptr<Player> player)
+{
+	// Tell the server to perform the same CLICK_PICKUP_ALL gather that the client already did
+	// locally in tryCollectMatchingItemsIntoCarried. Without this the server's slot state stays
+	// stale and the next broadcastChanges will push the old counts back to the client.
+	short changeUid = player->containerMenu->backup(player->inventory);
+	shared_ptr<ItemInstance> carried = player->inventory->getCarried();
+	connection->send(std::make_shared<ContainerClickPacket>(containerId, slotNum, 0, AbstractContainerMenu::CLICK_PICKUP_ALL, carried, changeUid));
 }
 
 void MultiPlayerGameMode::handleInventoryButtonClick(int containerId, int buttonId)

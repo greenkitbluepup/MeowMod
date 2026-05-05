@@ -1,4 +1,6 @@
 #include "stdafx.h"
+#include "stdafx.h"
+
 #include "Container.h"
 #include "AbstractContainerMenu.h"
 #include "CraftingContainer.h"
@@ -7,6 +9,7 @@
 #include "ItemInstance.h"
 #include "net.minecraft.world.level.tile.h"
 #include "net.minecraft.world.item.crafting.h"
+#include "ContentHooks.h"
 
 Recipes *Recipes::instance = nullptr;
 ArmorRecipes *Recipes::pArmorRecipes=nullptr;
@@ -1021,6 +1024,10 @@ Recipes::Recipes()
 
 	// 4J-PB removed System.out.println(recipies->size() + L" recipes");
 
+	// Allow mods to inject recipes before the ingredient array is built.
+	if (g_registerModRecipes)
+		g_registerModRecipes();
+
 	// 4J-PB - build the array of ingredients required per recipe
 	buildRecipeIngredientsArray();
 }
@@ -1322,4 +1329,10 @@ void Recipes::buildRecipeIngredientsArray(void)
 Recipy::INGREDIENTS_REQUIRED *Recipes::getRecipeIngredientsArray(void)
 {
 	return m_pRecipeIngredientsRequired;
+}
+
+void Recipes::addRecipeDirect(Recipy* r)
+{
+	if (r && recipies)
+		recipies->push_back(r);
 }

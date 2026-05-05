@@ -12,6 +12,7 @@
 #include "Tesselator.h"
 #include "EntityTileRenderer.h"
 #include "Options.h"
+#include "..\Minecraft.Mods\ModLoader.h"
 
 bool TileRenderer::fancy = true;
 
@@ -262,6 +263,10 @@ void TileRenderer::tesselateInWorldNoCulling( Tile* tile, int x, int y, int z, i
 bool TileRenderer::tesselateInWorld( Tile* tt, int x, int y, int z, int forceData,
 									shared_ptr< TileEntity > forceEntity )	// 4J added forceData, forceEntity param
 {
+  int blockData = (forceData >= 0) ? forceData : level->getData(x, y, z);
+	if (g_modLoader.dispatchBlockRenderer(level, x, y, z, tt->id, blockData))
+		return true;
+
 	Tesselator* t = Tesselator::getInstance();
 	int	shape = tt->getRenderShape();
 	tt->updateShape( level, x, y, z, forceData, forceEntity );

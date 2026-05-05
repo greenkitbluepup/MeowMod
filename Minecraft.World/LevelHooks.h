@@ -23,3 +23,7 @@ extern void (*g_endEmitterFeed)(void);
 // Set by LevelRenderer on construction; null until then.
 // Called by the mod after emitters move to trigger terrain re-bake.
 extern void (*g_markRegionDirty)(int x0, int y0, int z0, int x1, int y1, int z1);
+
+// Called from Level::sendTileUpdated on the client side whenever any tile changes.
+// Null when no mod has registered a listener.
+extern void (*g_notifyTileChanged)(int x, int y, int z);

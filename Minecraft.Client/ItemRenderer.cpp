@@ -11,6 +11,7 @@
 #include "..\Minecraft.World\net.minecraft.world.h"
 #include "Options.h"
 #include "TextureAtlas.h"
+#include "..\Minecraft.Mods\ModLoader.h"
 
 #ifdef _XBOX
 extern IDirect3DDevice9 *g_pD3DDevice;
@@ -61,6 +62,17 @@ void ItemRenderer::render(shared_ptr<Entity> _itemEntity, double x, double y, do
 {
 	// 4J - dynamic cast required because we aren't using templates/generics in our version
 	shared_ptr<ItemEntity> itemEntity = dynamic_pointer_cast<ItemEntity>(_itemEntity);
+    if (itemEntity != nullptr && itemEntity->getItem() != nullptr)
+	{
+		if (g_modLoader.dispatchItemRenderer(itemEntity->getItem()->id,
+											itemEntity->getItem()->getAuxValue(),
+											0,
+											itemEntity.get()))
+		{
+			return;
+		}
+	}
+
 	bindTexture(itemEntity);
 
     random->setSeed(187);

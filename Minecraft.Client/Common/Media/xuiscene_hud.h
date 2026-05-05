@@ -10,6 +10,7 @@
 #define IDC_Inventory8 L"Inventory8"
 #define IDC_Inventory9 L"Inventory9"
 #define IDC_Hotbar L"Hotbar"
+#define IDC_OffhandSlot L"OffhandSlot"
 #define IDC_ExperienceProgress L"ExperienceProgress"
 #define IDC_HorseJumpProgress L"HorseJumpProgress"
 #define IDC_Armour0 L"Armour0"

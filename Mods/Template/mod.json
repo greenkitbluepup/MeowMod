@@ -1,0 +1,18 @@
+{
+{
+  "id": "templatemod",
+  "name": "Template Mod",
+  "version": "1.0.0",
+  "description": "Starter template - replace with your own mod.",
+  "author": "MeowMod",
+  "permissions": [
+    "network.client",
+    "network.server",
+    "world.modify",
+    "commands",
+    "assets",
+    "rendering",
+    "events",
+    "entities"
+  ]
+}

@@ -26,6 +26,7 @@
 #include "DemoUser.h"
 #include "GuiParticles.h"
 #include "Screen.h"
+#include "AbstractContainerScreen.h"
 #include "DeathScreen.h"
 #include "ErrorScreen.h"
 #include "TitleScreen.h"
@@ -1478,7 +1479,7 @@ void Minecraft::run_middle()
 					{
 						if (g_KBMInput.IsKBMActive())
 						{
-							if(g_KBMInput.IsMouseButtonPressed(KeyboardMouseInput::MOUSE_LEFT))
+                         if(g_KBMInput.IsMouseButtonPressed(KeyboardMouseInput::MOUSE_LEFT))
 								localplayers[i]->ullButtonsPressed|=1LL<<MINECRAFT_ACTION_ACTION;
 
 							if(g_KBMInput.IsMouseButtonPressed(KeyboardMouseInput::MOUSE_RIGHT))
@@ -1499,13 +1500,29 @@ void Minecraft::run_middle()
 
 							if(g_KBMInput.IsKeyPressed(KeyboardMouseInput::KEY_INVENTORY))
 							{
+                             bool handledInventoryKey = false;
+
+								if (screen != nullptr)
+								{
+									if (dynamic_cast<AbstractContainerScreen*>(screen) != nullptr)
+									{
+										if (player != nullptr)
+											player->closeContainer();
+
+										setScreen(nullptr);
+										handledInventoryKey = true;
+									}
+								}
+
 								if(isClosableByEitherKey && !isEditing)
 								{
-									ui.CloseUIScenes(i);
+                                    if (!handledInventoryKey)
+										ui.CloseUIScenes(i);
 								}
 								else
 								{
-									localplayers[i]->ullButtonsPressed|=1LL<<MINECRAFT_ACTION_INVENTORY;
+                                    if (!handledInventoryKey)
+										localplayers[i]->ullButtonsPressed|=1LL<<MINECRAFT_ACTION_INVENTORY;
 								}
 							}
 
@@ -3757,7 +3774,7 @@ void Minecraft::tick(bool bFirst, bool bUpdateTextures)
 			}
 			else
 			{
-				app.LoadInventoryMenu(iPad,player);
+             setScreen(new InventoryScreen(player));
 			}
 		}
 

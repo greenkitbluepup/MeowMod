@@ -21,8 +21,13 @@ public:
 	ItemInstanceArray items;
 	ItemInstanceArray armor;
 
+	// Modern offhand slot.
+	// Stored separately from vanilla inventory/armor so existing container
+	// slot math does not accidentally expose it yet.
+	shared_ptr<ItemInstance> offhand;
+
 	int selected;
-	Player *player; // This is owned by shared_ptrs, but we are owned by it
+	Player* player; // This is owned by shared_ptrs, but we are owned by it
 
 private:
 	shared_ptr<ItemInstance> heldItem;
@@ -35,6 +40,11 @@ public:
 	~Inventory();
 
 	shared_ptr<ItemInstance> getSelected();
+
+	// Modern offhand helpers.
+	shared_ptr<ItemInstance> getOffhand();
+	void setOffhand(shared_ptr<ItemInstance> item);
+	void swapSelectedWithOffhand();
 	// 4J-PB - Added for the in-game tooltips
 	bool IsHeldItem();
 	static int getSelectionSize();

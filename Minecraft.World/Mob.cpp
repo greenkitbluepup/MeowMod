@@ -29,6 +29,7 @@
 #include "ParticleTypes.h"
 #include "GenericStats.h"
 #include "ItemEntity.h"
+#include "ContentHooks.h"
 
 const float Mob::MAX_WEARING_ARMOR_CHANCE = 0.15f;
 const float Mob::MAX_PICKUP_LOOT_CHANCE = 0.55f;
@@ -257,6 +258,13 @@ int Mob::getDeathLoot()
 
 void Mob::dropDeathLoot(bool wasKilledByPlayer, int playerBonusLevel)
 {
+  if (g_modApplyEntityDrops)
+	{
+		wstring entityId = EntityIO::getEncodeId(shared_from_this());
+		if (g_modApplyEntityDrops(entityId.c_str(), this, level, wasKilledByPlayer, playerBonusLevel))
+			return;
+	}
+
 	int loot = getDeathLoot();
 	if (loot > 0)
 	{

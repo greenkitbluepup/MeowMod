@@ -42,6 +42,8 @@
 #include "Options.h"
 #include "MinecraftServer.h"
 #include "ClientConstants.h"
+#include "..\Minecraft.World\ContentHooks.h"
+#include "..\Minecraft.Mods\ModLoader.h"
 #include "..\Minecraft.World\SoundTypes.h"
 #include "..\Minecraft.World\BasicTypeContainers.h"
 #include "TexturePackRepository.h"
@@ -50,10 +52,115 @@
 #else
 #include "Common\UI\UI.h"
 #endif
+
+namespace
+{
+	static const wchar_t* kModApiPayloadChannel = L"MC|ModAPI";
+	static const int kModMsg_ClientToServer = 1;
+	static const int kModMsg_ServerToClient = 2;
+	static const int kModMsg_RegistryHandshake = 3;
+
+	static ClientConnection* g_modApiPrimaryClientConnection = nullptr;
+
+	static std::string narrowAsciiLocal(const std::wstring& w)
+	{
+		std::string s;
+		s.reserve(w.size());
+		for (wchar_t c : w)
+			s.push_back((c >= 0 && c <= 127) ? static_cast<char>(c) : '?');
+		return s;
+	}
+
+	static bool BuildModApiPayload(int msgType,
+								   const std::wstring& channel,
+								   const void* payload,
+								   int size,
+								   byteArray* outData)
+	{
+		if (!outData || size < 0)
+			return false;
+
+		ByteArrayOutputStream baos;
+		DataOutputStream dos(&baos);
+		dos.writeByte(static_cast<byte>(msgType));
+		Packet::writeUtf(channel, &dos);
+		dos.writeInt(size);
+		if (size > 0)
+		{
+			if (!payload)
+				return false;
+			byteArray body(static_cast<unsigned int>(size));
+			memcpy(body.data, payload, static_cast<size_t>(size));
+			dos.write(body);
+		}
+		*outData = baos.toByteArray();
+		return true;
+	}
+
+	static bool ParseModApiPayload(const byteArray& inData,
+								   int* outMsgType,
+								   std::wstring* outChannel,
+								   byteArray* outPayload)
+	{
+		if (!outMsgType || !outChannel || !outPayload)
+			return false;
+
+		ByteArrayInputStream bais(inData);
+		DataInputStream dis(&bais);
+		int msgType = dis.readByte() & 0xFF;
+		std::wstring channel = Packet::readUtf(&dis, 128);
+		int size = dis.readInt();
+		if (size < 0)
+			return false;
+
+		byteArray payload;
+		if (size > 0)
+		{
+			payload = byteArray(static_cast<unsigned int>(size));
+			dis.readFully(payload);
+		}
+
+		*outMsgType = msgType;
+		*outChannel = channel;
+		*outPayload = payload;
+		return true;
+	}
+
+	static bool HostSendModPacketToServer(const wchar_t* channel,
+										  const void* payload,
+										  int size)
+	{
+		if (!g_modApiPrimaryClientConnection || !g_modApiPrimaryClientConnection->createdOk)
+			return false;
+
+		std::wstring channelW = channel ? channel : L"";
+		byteArray data;
+		if (!BuildModApiPayload(kModMsg_ClientToServer, channelW, payload, size, &data))
+			return false;
+
+		g_modApiPrimaryClientConnection->send(std::make_shared<CustomPayloadPacket>(kModApiPayloadChannel, data));
+		return true;
+	}
+
+	static bool HostSendModRegistryHandshake(const char* registryBlob)
+	{
+		if (!g_modApiPrimaryClientConnection || !g_modApiPrimaryClientConnection->createdOk)
+			return false;
+
+		int size = registryBlob ? static_cast<int>(strlen(registryBlob)) : 0;
+		byteArray data;
+		if (!BuildModApiPayload(kModMsg_RegistryHandshake, L"registry", registryBlob, size, &data))
+			return false;
+
+		g_modApiPrimaryClientConnection->send(std::make_shared<CustomPayloadPacket>(kModApiPayloadChannel, data));
+		return true;
+	}
+}
 #ifdef __PS3__
 #include "PS3/Network/SonyVoiceChat.h"
 #endif
 #include "DLCTexturePack.h"
+#include "..\Minecraft.World\EntityEvent.h"
 
 #ifdef _WINDOWS64
 #include "Xbox\Network\NetworkPlayerXbox.h"
@@ -140,6 +247,10 @@ ClientConnection::ClientConnection(Minecraft *minecraft, Socket *socket, int iUs
 	}
 
 	deferredEntityLinkPackets = vector<DeferredEntityLinkPacket>();
+
+	if (isPrimaryConnection())
+		g_modApiPrimaryClientConnection = this;
+	g_hostSendModPacketToServer = &HostSendModPacketToServer;
 }
 
 bool ClientConnection::isPrimaryConnection() const
@@ -197,6 +308,11 @@ bool ClientConnection::anyOtherConnectionHasChunk(int x, int z) const
 
 ClientConnection::~ClientConnection()
 {
+ if (g_modApiPrimaryClientConnection == this)
+		g_modApiPrimaryClientConnection = nullptr;
+	if (!g_modApiPrimaryClientConnection)
+		g_hostSendModPacketToServer = nullptr;
+
 	m_trackedEntityIds.clear();
 	m_visibleChunks.clear();
 	delete connection;
@@ -219,6 +335,9 @@ INetworkPlayer *ClientConnection::getNetworkPlayer()
 void ClientConnection::handleLogin(shared_ptr<LoginPacket> packet)
 {
 	if (done) return;
+
+	std::string registryBlob = g_modLoader.buildRegistryHandshakeBlob();
+  HostSendModRegistryHandshake(registryBlob.c_str());
 
 	PlayerUID OnlineXuid;
 	ProfileManager.GetXUID(m_userIndex,&OnlineXuid,true); // online xuid
@@ -2616,6 +2735,19 @@ void ClientConnection::handleEntityLinkPacket(shared_ptr<SetEntityLinkPacket> pa
 void ClientConnection::handleEntityEvent(shared_ptr<EntityEventPacket> packet)
 {
 	shared_ptr<Entity> e = getEntity(packet->entityId);
+    if (e != nullptr)
+	{
+		struct EntityEventPayload
+		{
+			int entityId;
+			int eventId;
+		} payload{ packet->entityId, packet->eventId };
+
+		if (packet->eventId == EntityEvent::HURT)
+			g_modLoader.emitEvent("entity.hurt", e.get(), &payload, sizeof(payload));
+		else if (packet->eventId == EntityEvent::DEATH)
+			g_modLoader.emitEvent("entity.death", e.get(), &payload, sizeof(payload));
+	}
 	if (e != nullptr) e->handleEntityEvent(packet->eventId);
 }
 
@@ -3729,6 +3861,22 @@ void ClientConnection::handleSoundEvent(shared_ptr<LevelSoundPacket> packet)
 
 void ClientConnection::handleCustomPayload(shared_ptr<CustomPayloadPacket> customPayloadPacket)
 {
+  if (customPayloadPacket->identifier.compare(kModApiPayloadChannel) == 0)
+	{
+		int msgType = 0;
+		std::wstring channelW;
+		byteArray payload;
+		if (ParseModApiPayload(customPayloadPacket->data, &msgType, &channelW, &payload))
+		{
+			if (msgType == kModMsg_ServerToClient)
+			{
+				std::string channel = narrowAsciiLocal(channelW);
+				g_modLoader.dispatchClientPacket(channel.c_str(), payload.data, static_cast<int>(payload.length));
+			}
+		}
+		return;
+	}
+
 	if (CustomPayloadPacket::TRADER_LIST_PACKET.compare(customPayloadPacket->identifier) == 0)
 	{
 		ByteArrayInputStream bais(customPayloadPacket->data);

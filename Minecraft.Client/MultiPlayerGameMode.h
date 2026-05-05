@@ -44,10 +44,13 @@ private:
 public:
     virtual bool useItemOn(shared_ptr<Player> player, Level *level, shared_ptr<ItemInstance> item, int x, int y, int z, int face, Vec3 *hit, bool bTestUseOnly=false, bool *pbUsedItem=nullptr);
     virtual bool useItem(shared_ptr<Player> player, Level *level, shared_ptr<ItemInstance> item, bool bTestUseOnly=false);
+  virtual bool useItemOnWithHand(shared_ptr<Player> player, Level *level, shared_ptr<ItemInstance> item, InteractionHand hand, int x, int y, int z, int face, Vec3 *hit, bool bTestUseOnly=false, bool *pbUsedItem=nullptr);
+	virtual bool useItemWithHand(shared_ptr<Player> player, Level *level, shared_ptr<ItemInstance> item, InteractionHand hand, bool bTestUseOnly=false);
     virtual shared_ptr<MultiplayerLocalPlayer> createPlayer(Level *level);
     virtual void attack(shared_ptr<Player> player, shared_ptr<Entity> entity);
     virtual bool interact(shared_ptr<Player> player, shared_ptr<Entity> entity);
-    virtual shared_ptr<ItemInstance> handleInventoryMouseClick(int containerId, int slotNum, int buttonNum, bool quickKeyHeld, shared_ptr<Player> player);
+	virtual shared_ptr<ItemInstance> handleInventoryMouseClick(int containerId, int slotNum, int buttonNum, bool quickKeyHeld, shared_ptr<Player> player);
+	virtual void handleInventoryPickupAll(int containerId, int slotNum, shared_ptr<Player> player);
 	virtual void handleInventoryButtonClick(int containerId, int buttonId);
 	virtual void handleCreativeModeItemAdd(shared_ptr<ItemInstance> clicked, int slot);
 	virtual void handleCreativeModeItemDrop(shared_ptr<ItemInstance> clicked);

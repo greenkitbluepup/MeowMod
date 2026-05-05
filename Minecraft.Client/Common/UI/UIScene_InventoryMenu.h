@@ -12,6 +12,19 @@ class UIScene_InventoryMenu : public UIScene_AbstractContainerMenu, public IUISc
 	friend class UIControl_MinecraftPlayer;
 private:
 	int m_bEffectTime[MobEffect::NUM_EFFECTS];
+
+	// SWF-space data captured each frame to position the offhand slot.
+	// m_playerX0 comes from the "player" custom draw region (left edge of
+	// the player model preview).  m_bootsSlot comes from slot_8 (boots)
+	// and gives us the slot size and y-coordinate for alignment.
+	struct SlotRegionData
+	{
+		float x0, y0, x1, y1;
+		float mat[16];
+		bool  valid = false;
+	};
+	float        m_playerRegionX0 = 0.0f;
+	SlotRegionData m_bootsSlotData;
 public:
 	UIScene_InventoryMenu(int iPad, void *initData, UILayer *parentLayer);
 
@@ -44,6 +57,7 @@ protected:
 	virtual UIControl *getSection(ESceneSection eSection);
 
 	virtual void customDraw(IggyCustomDrawCallbackRegion *region);
+	virtual void render(S32 width, S32 height, C4JRender::eViewportType viewport);
 	virtual void handleTimerComplete(int id);
 
 private:

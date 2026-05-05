@@ -13,6 +13,7 @@
 #include "TrapScreen.h"
 
 #include "MultiPlayerLocalPlayer.h"
+#include "MultiPlayerGameMode.h"
 #include "CreativeMode.h"
 #include "GameRenderer.h"
 #include "ItemInHandRenderer.h"
@@ -57,6 +58,124 @@
 #include "..\Minecraft.World\CommonStats.h"
 #endif
 extern ConsoleUIController ui;
+
+namespace
+{
+	bool HasStack(const shared_ptr<ItemInstance>& stack)
+	{
+		return stack != nullptr && stack->count > 0;
+	}
+
+	bool IsBlockStack(const shared_ptr<ItemInstance>& stack)
+	{
+		if (!HasStack(stack))
+			return false;
+
+       return stack->id >= 0 && stack->id < 256 && Tile::tiles[stack->id] != nullptr;
+	}
+
+	shared_ptr<ItemInstance> GetItemInHand(shared_ptr<Player> player, InteractionHand hand)
+	{
+		if (!player || !player->inventory)
+			return nullptr;
+
+		if (hand == InteractionHand::OFF_HAND)
+			return player->inventory->getOffhand();
+
+		return player->inventory->getSelected();
+	}
+
+	void CleanupHandAfterUse(shared_ptr<Player> player, InteractionHand hand)
+	{
+		if (!player || !player->inventory)
+			return;
+
+		if (hand == InteractionHand::OFF_HAND)
+		{
+			if (player->inventory->getOffhand() != nullptr && player->inventory->getOffhand()->count <= 0)
+				player->inventory->setOffhand(nullptr);
+			player->inventory->setChanged();
+			return;
+		}
+
+		shared_ptr<ItemInstance> selected = player->inventory->getSelected();
+		if (selected != nullptr && selected->count <= 0)
+			player->inventory->items[player->inventory->selected] = nullptr;
+	}
+
+	void ClearOrMarkOffhand(shared_ptr<Inventory> inventory)
+	{
+		if (!inventory)
+			return;
+
+		if (inventory->getOffhand() != nullptr && inventory->getOffhand()->count <= 0)
+			inventory->setOffhand(nullptr);
+
+		inventory->setChanged();
+	}
+
+ bool TryUseHandOn(shared_ptr<LocalPlayer> player, Level *level, MultiPlayerGameMode *gameMode, InteractionHand hand, int x, int y, int z, int face, Vec3 *hit, bool *pPlaced)
+	{
+		if (!player || !player->inventory || !level || !gameMode)
+			return false;
+
+     shared_ptr<ItemInstance> stack = GetItemInHand(player, hand);
+		if (hand == InteractionHand::OFF_HAND && !HasStack(stack))
+			return false;
+		if (!HasStack(stack) || !IsBlockStack(stack))
+			return false;
+
+        const int oldCount = stack->count;
+		bool usedItem = false;
+     if (!gameMode->useItemOnWithHand(player, level, stack, hand, x, y, z, face, hit, false, &usedItem))
+			return false;
+
+		if (pPlaced != nullptr && usedItem)
+			*pPlaced = true;
+
+        if (hand == InteractionHand::OFF_HAND)
+		{
+			if (stack->count <= 0)
+				player->inventory->setOffhand(nullptr);
+			else if (stack->count != oldCount || gameMode->hasInfiniteItems())
+				ClearOrMarkOffhand(player->inventory);
+		}
+		else
+		{
+			CleanupHandAfterUse(player, hand);
+		}
+
+		return true;
+	}
+
+ bool TryUseHandInAir(shared_ptr<LocalPlayer> player, Level *level, MultiPlayerGameMode *gameMode, InteractionHand hand)
+	{
+		if (!player || !player->inventory || !level || !gameMode)
+			return false;
+
+     shared_ptr<ItemInstance> stack = GetItemInHand(player, hand);
+		if (!HasStack(stack))
+			return false;
+
+        const int oldCount = stack->count;
+		if (!gameMode->useItemWithHand(player, level, stack, hand))
+			return false;
+
+        if (hand == InteractionHand::OFF_HAND)
+		{
+			if (stack->count <= 0)
+				player->inventory->setOffhand(nullptr);
+			else if (stack->count != oldCount || gameMode->hasInfiniteItems())
+				ClearOrMarkOffhand(player->inventory);
+		}
+		else
+		{
+			CleanupHandAfterUse(player, hand);
+		}
+
+		return true;
+	}
+}
 
 
 LocalPlayer::LocalPlayer(Minecraft *minecraft, Level *level, User *user, int dimension) : Player(level, user->name)
@@ -1554,10 +1673,10 @@ bool LocalPlayer::handleMouseClick(int button)
 		}
 		else
 		{
-			shared_ptr<ItemInstance> item = oldItem;
+            shared_ptr<ItemInstance> item = GetItemInHand(dynamic_pointer_cast<LocalPlayer>(shared_from_this()), InteractionHand::MAIN_HAND);
 			int oldCount = item != nullptr ? item->count : 0;
 			bool usedItem = false;
-			if (minecraft->gameMode->useItemOn(minecraft->localplayers[GetXboxPad()], level, item, x, y, z, face, minecraft->hitResult->pos, false, &usedItem))
+         if (minecraft->gameMode->useItemOnWithHand(minecraft->localplayers[GetXboxPad()], level, item, InteractionHand::MAIN_HAND, x, y, z, face, minecraft->hitResult->pos, false, &usedItem))
 			{
 				// Presume that if we actually used the held item, then we've placed it
 				if( usedItem )
@@ -1568,9 +1687,49 @@ bool LocalPlayer::handleMouseClick(int button)
 				//app.DebugPrintf("Player %d is swinging\n",GetXboxPad());
 				swing();
 			}
+
+		 if (mayUse && button == 1)
+		 {
+			 bool offhandPlaced = false;
+
+			 if (TryUseHandOn(
+				 dynamic_pointer_cast<LocalPlayer>(shared_from_this()),
+				 level,
+				 minecraft->gameMode,
+				 InteractionHand::OFF_HAND,
+				 x, y, z, face,
+				 minecraft->hitResult->pos,
+				 &offhandPlaced))
+			 {
+				 mayUse = false;
+
+				 // Do NOT call swing() here.
+				 // swing() drives the main/right-hand attack animation.
+
+				 if (minecraft &&
+					 minecraft->gameRenderer &&
+					 minecraft->gameRenderer->itemInHandRenderer)
+				 {
+					 if (offhandPlaced)
+					 {
+						 minecraft->gameRenderer->itemInHandRenderer->itemPlacedOffhand();
+					 }
+					 else
+					 {
+						 minecraft->gameRenderer->itemInHandRenderer->itemUsedOffhand();
+					 }
+				 }
+
+				 if (offhandPlaced)
+				 {
+					 returnItemPlaced = true;
+				 }
+			 }
+		 }
+
 			if (item == nullptr)
 			{
-				return false;
+               return mayUse ? false : returnItemPlaced;
 			}
 
 			if (item->count == 0)
@@ -1586,12 +1745,26 @@ bool LocalPlayer::handleMouseClick(int button)
 
 	if (mayUse && button == 1)
 	{
-		shared_ptr<ItemInstance> item = inventory->getSelected();
+       shared_ptr<ItemInstance> item = GetItemInHand(dynamic_pointer_cast<LocalPlayer>(shared_from_this()), InteractionHand::MAIN_HAND);
+		bool mainHandUsed = false;
 		if (item != nullptr)
 		{
-			if (minecraft->gameMode->useItem(minecraft->localplayers[GetXboxPad()], level, item))
+           if (minecraft->gameMode->useItemWithHand(minecraft->localplayers[GetXboxPad()], level, item, InteractionHand::MAIN_HAND))
 			{
 				minecraft->gameRenderer->itemInHandRenderer->itemUsed();
+				mainHandUsed = true;
+               mayUse = false;
+			}
+		}
+
+      // Offhand fallback: main hand tried first, offhand gets a chance only if
+		// main hand did not consume the action.
+		if (!mainHandUsed && mayUse)
+		{
+         if (TryUseHandInAir(dynamic_pointer_cast<LocalPlayer>(shared_from_this()), level, minecraft->gameMode, InteractionHand::OFF_HAND))
+			{
+                mayUse = false;
+               minecraft->gameRenderer->itemInHandRenderer->itemUsedOffhand();
 			}
 		}
 	}

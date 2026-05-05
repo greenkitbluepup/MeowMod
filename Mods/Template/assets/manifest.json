@@ -1,0 +1,14 @@
+{
+  "textures": [
+    "textures/blocks/meow_ore.png"
+  ],
+  "sounds": [
+    "sounds/meow.ogg"
+  ],
+  "lang": [
+    "lang/en_us.json"
+  ],
+  "models": [
+    "models/block/meow_ore.json"
+  ]
+}

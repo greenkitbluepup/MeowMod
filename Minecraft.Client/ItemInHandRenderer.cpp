@@ -15,6 +15,7 @@
 #include "..\Minecraft.World\net.minecraft.world.level.tile.h"
 #include "..\Minecraft.World\net.minecraft.world.entity.h"
 #include "..\Minecraft.World\net.minecraft.world.entity.player.h"
+#include "..\Minecraft.World\Inventory.h"
 #include "..\Minecraft.World\net.minecraft.world.level.h"
 #include "..\Minecraft.World\net.minecraft.world.h"
 
@@ -26,12 +27,48 @@ int ItemInHandRenderer::listItem = -1;
 int ItemInHandRenderer::listTerrain = -1;
 int ItemInHandRenderer::listGlint = -1;
 
-ItemInHandRenderer::ItemInHandRenderer(Minecraft *minecraft, bool optimisedMinimap)
+namespace
 {
-	// 4J - added
-	height = 0;
-	oHeight = 0;
-	selectedItem = nullptr;
+    bool sameOffhandItem(shared_ptr<ItemInstance> a, shared_ptr<ItemInstance> b)
+    {
+        if (a == nullptr || b == nullptr)
+            return a == b;
+
+        return a->id == b->id && a->getAuxValue() == b->getAuxValue();
+    }
+
+    float approach(float value, float target, float step)
+    {
+        if (value < target)
+        {
+            value += step;
+            if (value > target) value = target;
+        }
+        else if (value > target)
+        {
+            value -= step;
+            if (value < target) value = target;
+        }
+
+        return value;
+    }
+}
+
+ItemInHandRenderer::ItemInHandRenderer(Minecraft* minecraft, bool optimisedMinimap)
+{
+    // 4J - added
+    height = 0;
+    oHeight = 0;
+    selectedItem = nullptr;
+
+    m_offhandHeight = 0.0f;
+    m_oOffhandHeight = 0.0f;
+
+    m_offhandUseAnim = 0.0f;
+    m_oOffhandUseAnim = 0.0f;
+
+    m_offhandRenderItem = nullptr;
+    m_offhandPendingItem = nullptr;
 	tileRenderer = new TileRenderer();
 	lastSlot = -1;
 
@@ -222,7 +259,7 @@ ItemInHandRenderer::ItemInHandRenderer(Minecraft *minecraft, bool optimisedMinim
 
 }
 
-void ItemInHandRenderer::renderItem(shared_ptr<LivingEntity> mob, shared_ptr<ItemInstance> item, int layer, bool setColor/* = true*/)
+void ItemInHandRenderer::renderItem(shared_ptr<LivingEntity> mob, shared_ptr<ItemInstance> item, int layer, bool setColor/* = true*/, bool mirrorSpriteX/* = false*/)
 {
 	// 4J - code borrowed from render method below, although not factoring in brightness as that should already be being taken into account
 	// by texture lighting. This is for colourising things held in 3rd person view.
@@ -283,6 +320,14 @@ void ItemInHandRenderer::renderItem(shared_ptr<LivingEntity> mob, shared_ptr<Ite
 		float u1 = icon->getU1();
 		float v0 = icon->getV0();
 		float v1 = icon->getV1();
+        // Do not swap UVs. Some old texture-matrix item paths sample incorrectly
+// when u0/u1 are reversed.
+        if (false && mirrorSpriteX)
+        {
+            float tmp = u0;
+            u0 = u1;
+            u1 = tmp;
+        }
 
         float xo = 0.0f;
         float yo = 0.3f;
@@ -303,15 +348,26 @@ void ItemInHandRenderer::renderItem(shared_ptr<LivingEntity> mob, shared_ptr<Ite
 
         glEnable(GL_RESCALE_NORMAL);
         glTranslatef(-xo, -yo, 0);
+
         float s = 1.5f;
         glScalef(s, s, s);
 
-        glRotatef(50, 0, 1, 0);
-        glRotatef(45 + 290, 0, 0, 1);
-        glTranslatef(-15 / 16.0f, -1 / 16.0f, 0);
-        float dd = 1 / 16.0f;
+        // Use the exact same held-sprite pose as the normal/main hand.
+// Offhand position is handled by the outer offhand transform.
+        glRotatef(50.0f, 0, 1, 0);
+        glRotatef(45.0f + 290.0f, 0, 0, 1);
+        glTranslatef(-15.0f / 16.0f, -1.0f / 16.0f, 0);
 
-        renderItem3D(t, u0, v0, u1, v1, icon->getSourceWidth(), icon->getSourceHeight(), 1 / 16.0f, false, bIsTerrain);
+        renderItem3D(
+            t,
+            u0, v0,
+            u1, v1,
+            icon->getSourceWidth(),
+            icon->getSourceHeight(),
+            1.0f / 16.0f,
+            false,
+            bIsTerrain
+        );
 
         if (item != nullptr && item->isFoil() && layer == 0)
 		{
@@ -387,31 +443,31 @@ void ItemInHandRenderer::render(float a)
     float h = oHeight + (height - oHeight) * a;
     shared_ptr<Player> player = minecraft->player;
 
-	if (player == nullptr)
-	{
-		return;
-	}
+    if (player == nullptr)
+    {
+        return;
+    }
 
-	// 4J - added so we can adjust the position of the hands for horizontal & vertical split screens
-	float fudgeX = 0.0f;
-	float fudgeY = 0.0f;
-	float fudgeZ = 0.0f;
-	bool splitHoriz = false;
-	shared_ptr<LocalPlayer> localPlayer = dynamic_pointer_cast<LocalPlayer>(player);
-	if( localPlayer )
-	{
-		if( localPlayer->m_iScreenSection == C4JRender::VIEWPORT_TYPE_SPLIT_BOTTOM ||
-			localPlayer->m_iScreenSection == C4JRender::VIEWPORT_TYPE_SPLIT_TOP )
-		{
-			fudgeY = 0.08f;
-			splitHoriz = true;
-		}
-		else if( localPlayer->m_iScreenSection == C4JRender::VIEWPORT_TYPE_SPLIT_LEFT ||
-				 localPlayer->m_iScreenSection == C4JRender::VIEWPORT_TYPE_SPLIT_RIGHT )
-		{
-			fudgeX = -0.18f;
-		}
-	}
+    // 4J - added so we can adjust the position of the hands for horizontal & vertical split screens
+    float fudgeX = 0.0f;
+    float fudgeY = 0.0f;
+    float fudgeZ = 0.0f;
+    bool splitHoriz = false;
+    shared_ptr<LocalPlayer> localPlayer = dynamic_pointer_cast<LocalPlayer>(player);
+    if (localPlayer)
+    {
+        if (localPlayer->m_iScreenSection == C4JRender::VIEWPORT_TYPE_SPLIT_BOTTOM ||
+            localPlayer->m_iScreenSection == C4JRender::VIEWPORT_TYPE_SPLIT_TOP)
+        {
+            fudgeY = 0.08f;
+            splitHoriz = true;
+        }
+        else if (localPlayer->m_iScreenSection == C4JRender::VIEWPORT_TYPE_SPLIT_LEFT ||
+            localPlayer->m_iScreenSection == C4JRender::VIEWPORT_TYPE_SPLIT_RIGHT)
+        {
+            fudgeX = -0.18f;
+        }
+    }
 
     float xr = player->xRotO + (player->xRot - player->xRotO) * a;
 
@@ -422,11 +478,11 @@ void ItemInHandRenderer::render(float a)
     glPopMatrix();
 
     if (localPlayer)
-	{
+    {
         float xrr = localPlayer->xBobO + (localPlayer->xBob - localPlayer->xBobO) * a;
         float yrr = localPlayer->yBobO + (localPlayer->yBob - localPlayer->yBobO) * a;
-		// 4J - was using player->xRot and yRot directly here rather than interpolating between old & current with a
-		float yr = player->yRotO + (player->yRot - player->yRotO) * a;
+        // 4J - was using player->xRot and yRot directly here rather than interpolating between old & current with a
+        float yr = player->yRotO + (player->yRot - player->yRotO) * a;
         glRotatef((xr - xrr) * 0.1f, 1, 0, 0);
         glRotatef((yr - yrr) * 0.1f, 0, 1, 0);
     }
@@ -434,9 +490,9 @@ void ItemInHandRenderer::render(float a)
     shared_ptr<ItemInstance> item = selectedItem;
 
     float br = minecraft->level->getBrightness(Mth::floor(player->x), Mth::floor(player->y), Mth::floor(player->z));
-	// 4J - change brought forward from 1.8.2
+    // 4J - change brought forward from 1.8.2
     if (SharedConstants::TEXTURE_LIGHTING)
-	{
+    {
         br = 1;
         int col = minecraft->level->getLightColor(Mth::floor(player->x), Mth::floor(player->y), Mth::floor(player->z), 0);
         int u = col % 65536;
@@ -445,29 +501,29 @@ void ItemInHandRenderer::render(float a)
         glColor4f(1, 1, 1, 1);
     }
     if (item != nullptr)
-	{
-        int col = Item::items[item->id]->getColor(item,0);
+    {
+        int col = Item::items[item->id]->getColor(item, 0);
         float red = ((col >> 16) & 0xff) / 255.0f;
         float g = ((col >> 8) & 0xff) / 255.0f;
         float b = ((col) & 0xff) / 255.0f;
 
         glColor4f(br * red, br * g, br * b, 1);
     }
-	else
-	{
-	    glColor4f(br, br, br, 1);
-	}
+    else
+    {
+        glColor4f(br, br, br, 1);
+    }
 
     if (item != nullptr && item->id == Item::map->id)
-	{
+    {
         glPushMatrix();
         float d = 0.8f;
 
-		// 4J - move the map away a bit if we're in horizontal split screen, so it doesn't clip out of the save zone
-		if( splitHoriz )
-		{
-			glTranslatef(0.0f, 0.0f, -0.3f );
-		}
+        // 4J - move the map away a bit if we're in horizontal split screen, so it doesn't clip out of the save zone
+        if (splitHoriz)
+        {
+            glTranslatef(0.0f, 0.0f, -0.3f);
+        }
 
         {
             float swing = player->getAttackAnim(a);
@@ -490,12 +546,12 @@ void ItemInHandRenderer::render(float a)
 
 
         {
-			// 4J-PB - if we've got a player texture, use that
-			//glBindTexture(GL_TEXTURE_2D, minecraft->textures->loadHttpTexture(minecraft->player->customTextureUrl, minecraft->player->getTexture()));
-			glBindTexture(GL_TEXTURE_2D, minecraft->textures->loadMemTexture(minecraft->player->customTextureUrl, minecraft->player->getTexture()));
-			minecraft->textures->clearLastBoundId();
+            // 4J-PB - if we've got a player texture, use that
+            //glBindTexture(GL_TEXTURE_2D, minecraft->textures->loadHttpTexture(minecraft->player->customTextureUrl, minecraft->player->getTexture()));
+            glBindTexture(GL_TEXTURE_2D, minecraft->textures->loadMemTexture(minecraft->player->customTextureUrl, minecraft->player->getTexture()));
+            minecraft->textures->clearLastBoundId();
             for (int i = 0; i < 2; i++)
-			{
+            {
                 int flip = i * 2 - 1;
                 glPushMatrix();
 
@@ -505,17 +561,17 @@ void ItemInHandRenderer::render(float a)
                 glRotatef(59, 0, 0, 1);
                 glRotatef(static_cast<float>(-65 * flip), 0, 1, 0);
 
-                EntityRenderer *er = EntityRenderDispatcher::instance->getRenderer(minecraft->player);
-                PlayerRenderer *playerRenderer = static_cast<PlayerRenderer *>(er);
+                EntityRenderer* er = EntityRenderDispatcher::instance->getRenderer(minecraft->player);
+                PlayerRenderer* playerRenderer = static_cast<PlayerRenderer*>(er);
                 float ss = 1;
                 glScalef(ss, ss, ss);
 
-				// Can't turn off the hand if the player is holding a map
-				shared_ptr<ItemInstance> itemInstance = player->inventory->getSelected();
-				if ((itemInstance && (itemInstance->getItem()->id==Item::map_Id)) || app.GetGameSettings(localPlayer->GetXboxPad(),eGameSetting_DisplayHand)!=0 )
+                // Can't turn off the hand if the player is holding a map
+                shared_ptr<ItemInstance> itemInstance = player->inventory->getSelected();
+                if ((itemInstance && (itemInstance->getItem()->id == Item::map_Id)) || app.GetGameSettings(localPlayer->GetXboxPad(), eGameSetting_DisplayHand) != 0)
                 {
-					playerRenderer->renderHand();
-				}
+                    playerRenderer->renderHand();
+                }
                 glPopMatrix();
             }
         }
@@ -540,15 +596,15 @@ void ItemInHandRenderer::render(float a)
         float s = 2 / 128.0f;
         glScalef(s, s, s);
 
-		MemSect(31);
+        MemSect(31);
         minecraft->textures->bindTexture(&MAP_BACKGROUND_LOCATION);	// 4J was L"/misc/mapbg.png"
-		MemSect(0);
-        Tesselator *t = Tesselator::getInstance();
+        MemSect(0);
+        Tesselator* t = Tesselator::getInstance();
 
-//        glNormal3f(0, 0, -1);	// 4J - changed to use tesselator
+        //        glNormal3f(0, 0, -1);	// 4J - changed to use tesselator
         t->begin();
-		int vo = 7;
-		t->normal(0,0,-1);
+        int vo = 7;
+        t->normal(0, 0, -1);
         t->vertexUV(static_cast<float>(0 - vo), static_cast<float>(128 + vo), static_cast<float>(0), static_cast<float>(0), static_cast<float>(1));
         t->vertexUV(static_cast<float>(128 + vo), static_cast<float>(128 + vo), static_cast<float>(0), static_cast<float>(1), static_cast<float>(1));
         t->vertexUV(static_cast<float>(128 + vo), static_cast<float>(0 - vo), static_cast<float>(0), static_cast<float>(1), static_cast<float>(0));
@@ -556,27 +612,27 @@ void ItemInHandRenderer::render(float a)
         t->end();
 
         shared_ptr<MapItemSavedData> data = Item::map->getSavedData(item, minecraft->level);
-		PIXBeginNamedEvent(0,"Minimap render");
-		if(data != nullptr) minimap->render(minecraft->player, minecraft->textures, data, minecraft->player->entityId);
-		PIXEndNamedEvent();
+        PIXBeginNamedEvent(0, "Minimap render");
+        if (data != nullptr) minimap->render(minecraft->player, minecraft->textures, data, minecraft->player->entityId);
+        PIXEndNamedEvent();
 
         glPopMatrix();
     }
-	else if (item != nullptr)
-	{
+    else if (item != nullptr)
+    {
         glPushMatrix();
         float d = 0.8f;
 
 #if defined __ORBIS__ || defined __PS3__ || defined _WINDOWS64
-		static const float swingPowFactor = 1.0f;
+        static const float swingPowFactor = 1.0f;
 #else
-		static const float swingPowFactor = 4.0f;		// 4J added, to slow the swing down when nearest the player for avoiding luminance flash issues
+        static const float swingPowFactor = 4.0f;		// 4J added, to slow the swing down when nearest the player for avoiding luminance flash issues
 #endif
         if (player->getUseItemDuration() > 0)
-		{
+        {
             UseAnim anim = item->getUseAnimation();
-            if ( (anim == UseAnim_eat) || (anim == UseAnim_drink) )
-			{
+            if ((anim == UseAnim_eat) || (anim == UseAnim_drink))
+            {
                 float t = (player->getUseItemDuration() - a + 1);
                 float swing = 1 - (t / item->getUseDuration());
 
@@ -592,44 +648,44 @@ void ItemInHandRenderer::render(float a)
                 glRotatef(iss * 30, 0, 0, 1);
             }
         }
-		else
-		{
-			float swing = powf(player->getAttackAnim(a),swingPowFactor);
+        else
+        {
+            float swing = powf(player->getAttackAnim(a), swingPowFactor);
 
-			float swing1 = Mth::sin(swing * PI);
-			float swing2 = Mth::sin((sqrt(swing)) * PI);
-			glTranslatef(-swing2 * 0.4f, Mth::sin(sqrt(swing) * PI * 2) * 0.2f, -swing1 * 0.2f);
+            float swing1 = Mth::sin(swing * PI);
+            float swing2 = Mth::sin((sqrt(swing)) * PI);
+            glTranslatef(-swing2 * 0.4f, Mth::sin(sqrt(swing) * PI * 2) * 0.2f, -swing1 * 0.2f);
 
-		}
+        }
 
         glTranslatef(0.7f * d, -0.65f * d - (1 - h) * 0.6f, -0.9f * d);
-		glTranslatef(fudgeX, fudgeY, fudgeZ);	// 4J added
+        glTranslatef(fudgeX, fudgeY, fudgeZ);	// 4J added
 
         glRotatef(45, 0, 1, 0);
         glEnable(GL_RESCALE_NORMAL);
 
-		float swing = powf(player->getAttackAnim(a),swingPowFactor);
-		float swing3 = Mth::sin(swing * swing * PI);
-		float swing2 = Mth::sin(sqrt(swing) * PI);
-		glRotatef(-swing3 * 20, 0, 1, 0);
-		glRotatef(-swing2 * 20, 0, 0, 1);
-		glRotatef(-swing2 * 80, 1, 0, 0);
+        float swing = powf(player->getAttackAnim(a), swingPowFactor);
+        float swing3 = Mth::sin(swing * swing * PI);
+        float swing2 = Mth::sin(sqrt(swing) * PI);
+        glRotatef(-swing3 * 20, 0, 1, 0);
+        glRotatef(-swing2 * 20, 0, 0, 1);
+        glRotatef(-swing2 * 80, 1, 0, 0);
 
         float ss = 0.4f;
         glScalef(ss, ss, ss);
 
         if (player->getUseItemDuration() > 0)
-		{
+        {
             UseAnim anim = item->getUseAnimation();
             if (anim == UseAnim_block)
-			{
+            {
                 glTranslatef(-0.5f, 0.2f, 0.0f);
                 glRotatef(30, 0, 1, 0);
                 glRotatef(-80, 1, 0, 0);
                 glRotatef(60, 0, 1, 0);
             }
-			else if (anim == UseAnim_bow)
-			{
+            else if (anim == UseAnim_bow)
+            {
 
                 glRotatef(-18, 0, 0, 1);
                 glRotatef(-12, 0, 1, 0);
@@ -640,7 +696,7 @@ void ItemInHandRenderer::render(float a)
                 pow = ((pow * pow) + pow * 2) / 3;
                 if (pow > 1) pow = 1;
                 if (pow > 0.1f)
-				{
+                {
                     glTranslatef(0, Mth::sin((timeHeld - 0.1f) * 1.3f) * 0.01f * (pow - 0.1f), 0);
                 }
                 glTranslatef(0, 0, pow * 0.1f);
@@ -658,33 +714,33 @@ void ItemInHandRenderer::render(float a)
 
 
         if (item->getItem()->isMirroredArt())
-		{
+        {
             glRotatef(180, 0, 1, 0);
         }
 
         if (item->getItem()->hasMultipleSpriteLayers())
-		{
+        {
             // special case for potions, refactor this when we get more
             // items that have two layers
             renderItem(player, item, 0, false);
 
-			int col = Item::items[item->id]->getColor(item, 1);
-			float red = ((col >> 16) & 0xff) / 255.0f;
-			float g = ((col >> 8) & 0xff) / 255.0f;
-			float b = ((col) & 0xff) / 255.0f;
+            int col = Item::items[item->id]->getColor(item, 1);
+            float red = ((col >> 16) & 0xff) / 255.0f;
+            float g = ((col >> 8) & 0xff) / 255.0f;
+            float b = ((col) & 0xff) / 255.0f;
 
-			glColor4f(br * red, br * g, br * b, 1);
+            glColor4f(br * red, br * g, br * b, 1);
 
             renderItem(player, item, 1, false);
         }
-		else
-		{
+        else
+        {
             renderItem(player, item, 0, false);
         }
         glPopMatrix();
     }
-	else if (!player->isInvisible())
-	{
+    else if (!player->isInvisible())
+    {
         glPushMatrix();
         float d = 0.8f;
 
@@ -697,7 +753,7 @@ void ItemInHandRenderer::render(float a)
         }
 
         glTranslatef(0.8f * d, -0.75f * d - (1 - h) * 0.6f, -0.9f * d);
-		glTranslatef(fudgeX, fudgeY, fudgeZ);	// 4J added
+        glTranslatef(fudgeX, fudgeY, fudgeZ);	// 4J added
 
         glRotatef(45, 0, 1, 0);
         glEnable(GL_RESCALE_NORMAL);
@@ -709,14 +765,14 @@ void ItemInHandRenderer::render(float a)
             glRotatef(-swing3 * 20, 0, 0, 1);
         }
 
-		// 4J-PB - if we've got a player texture, use that
+        // 4J-PB - if we've got a player texture, use that
 
-		//glBindTexture(GL_TEXTURE_2D, minecraft->textures->loadHttpTexture(minecraft->player->customTextureUrl, minecraft->player->getTexture()));
+        //glBindTexture(GL_TEXTURE_2D, minecraft->textures->loadHttpTexture(minecraft->player->customTextureUrl, minecraft->player->getTexture()));
 
-		MemSect(31);
-		glBindTexture(GL_TEXTURE_2D, minecraft->textures->loadMemTexture(minecraft->player->customTextureUrl, minecraft->player->getTexture()));
-		MemSect(0);
-		minecraft->textures->clearLastBoundId();
+        MemSect(31);
+        glBindTexture(GL_TEXTURE_2D, minecraft->textures->loadMemTexture(minecraft->player->customTextureUrl, minecraft->player->getTexture()));
+        MemSect(0);
+        minecraft->textures->clearLastBoundId();
         glTranslatef(-1.0f, +3.6f, +3.5f);
         glRotatef(120, 0, 0, 1);
         glRotatef(180 + 20, 1, 0, 0);
@@ -724,27 +780,177 @@ void ItemInHandRenderer::render(float a)
         glScalef(1.5f / 24.0f * 16, 1.5f / 24.0f * 16, 1.5f / 24.0f * 16);
         glTranslatef(5.6f, 0, 0);
 
-        EntityRenderer *er = EntityRenderDispatcher::instance->getRenderer(minecraft->player);
-        PlayerRenderer *playerRenderer = static_cast<PlayerRenderer *>(er);
+        EntityRenderer* er = EntityRenderDispatcher::instance->getRenderer(minecraft->player);
+        PlayerRenderer* playerRenderer = static_cast<PlayerRenderer*>(er);
         float ss = 1;
         glScalef(ss, ss, ss);
-		MemSect(31);
-		// Can't turn off the hand if the player is holding a map
-		shared_ptr<ItemInstance> itemInstance = player->inventory->getSelected();
+        MemSect(31);
+        // Can't turn off the hand if the player is holding a map
+        shared_ptr<ItemInstance> itemInstance = player->inventory->getSelected();
 
-		if ( (itemInstance && (itemInstance->getItem()->id==Item::map_Id)) || app.GetGameSettings(localPlayer->GetXboxPad(),eGameSetting_DisplayHand)!=0 )
-		{
-			playerRenderer->renderHand();
-		}
-		MemSect(0);
+        if ((itemInstance && (itemInstance->getItem()->id == Item::map_Id)) || app.GetGameSettings(localPlayer->GetXboxPad(), eGameSetting_DisplayHand) != 0)
+        {
+            playerRenderer->renderHand();
+        }
+        MemSect(0);
         glPopMatrix();
     }
 
     glDisable(GL_RESCALE_NORMAL);
+
+    // -----------------------------------------------------------------------
+// Modern offhand first-person preview.
+//
+// This mirrors the normal main-hand held-item transform, but keeps the
+// offhand stable. Do not use player->getAttackAnim(a) here, or the
+// offhand will swing every time the main hand attacks.
+// -----------------------------------------------------------------------
+    if (player &&
+        player->inventory &&
+        m_offhandRenderItem != nullptr &&
+        m_offhandRenderItem->count > 0)
+    {
+        shared_ptr<ItemInstance> offhandItem = m_offhandRenderItem;
+
+        float offhandHeight = m_oOffhandHeight + (m_offhandHeight - m_oOffhandHeight) * a;
+        float equipDrop = 1.0f - offhandHeight;
+        float offhandUse = m_oOffhandUseAnim + (m_offhandUseAnim - m_oOffhandUseAnim) * a;
+
+        glPushMatrix();
+
+        if (SharedConstants::TEXTURE_LIGHTING)
+        {
+            glColor4f(1, 1, 1, 1);
+        }
+        else
+        {
+            glColor4f(br, br, br, 1);
+        }
+
+#if defined __ORBIS__ || defined __PS3__ || defined _WINDOWS64
+        static const float offhandSwingPowFactor = 1.0f;
+#else
+        static const float offhandSwingPowFactor = 4.0f;
+#endif
+
+        float offhandSwing = 0.0f;
+
+        if (offhandUse > 0.0f)
+        {
+            // m_offhandUseAnim starts at 1 and decays to 0.
+            // Main-hand attack animation progresses 0 -> 1, so invert it.
+            offhandSwing = 1.0f - offhandUse;
+
+            if (offhandSwing < 0.0f) offhandSwing = 0.0f;
+            if (offhandSwing > 1.0f) offhandSwing = 1.0f;
+
+            offhandSwing = powf(offhandSwing, offhandSwingPowFactor);
+        }
+
+        // Detect whether this offhand item should use the block-model pose.
+        // This must be declared ONCE in this block.
+        Tile* offhandTile = nullptr;
+
+        if (offhandItem->id >= 0 && offhandItem->id < 256)
+        {
+            offhandTile = Tile::tiles[offhandItem->id];
+        }
+
+        const bool offhandIsBlockModel =
+            offhandItem->getIconType() == Icon::TYPE_TERRAIN &&
+            offhandTile != nullptr &&
+            TileRenderer::canRender(offhandTile->getRenderShape());
+
+        // We are intentionally not mirroring sprite UVs anymore.
+        // The outer offhand transform places the item on the left.
+        const bool offhandMirrorSprite = false;
+
+        // Copy of main-hand pre-position swing, mirrored on X for left hand.
+        if (offhandUse > 0.0f)
+        {
+            float swing1 = Mth::sin(offhandSwing * PI);
+            float swing2 = Mth::sin(sqrtf(offhandSwing) * PI);
+
+            glTranslatef(
+                swing2 * 0.4f,
+                Mth::sin(sqrtf(offhandSwing) * PI * 2.0f) * 0.2f,
+                -swing1 * 0.2f
+            );
+        }
+
+        float offhandD = 0.8f;
+
+        // Equip/drop animation stays separate.
+        glTranslatef(0.0f, -0.35f * equipDrop, 0.0f);
+
+        // Put the item on the left side.
+        glTranslatef(
+            -0.7f * offhandD + fudgeX,
+            -0.65f * offhandD + fudgeY,
+            -0.9f * offhandD + fudgeZ
+        );
+
+        // Blocks look better mirrored.
+        // Sprites use the same facing angle as the normal hand.
+        if (offhandIsBlockModel)
+        {
+            glRotatef(-45.0f, 0, 1, 0);
+        }
+        else
+        {
+            glRotatef(45.0f, 0, 1, 0);
+        }
+
+        glEnable(GL_RESCALE_NORMAL);
+
+        // Copy of main-hand swing rotations.
+        if (offhandUse > 0.0f)
+        {
+            float swing3 = Mth::sin(offhandSwing * offhandSwing * PI);
+            float swing2 = Mth::sin(sqrtf(offhandSwing) * PI);
+
+            if (offhandIsBlockModel)
+            {
+                // Mirrored block-style offhand swing.
+                glRotatef(swing3 * 20.0f, 0.0f, 1.0f, 0.0f);
+                glRotatef(swing2 * 20.0f, 0.0f, 0.0f, 1.0f);
+                glRotatef(-swing2 * 80.0f, 1.0f, 0.0f, 0.0f);
+            }
+            else
+            {
+                // Sprite uses normal-hand swing signs.
+                glRotatef(-swing3 * 20.0f, 0.0f, 1.0f, 0.0f);
+                glRotatef(-swing2 * 20.0f, 0.0f, 0.0f, 1.0f);
+                glRotatef(-swing2 * 80.0f, 1.0f, 0.0f, 0.0f);
+            }
+        }
+
+        float ss = 0.4f;
+        glScalef(ss, ss, ss);
+
+        if (offhandItem->getItem()->hasMultipleSpriteLayers())
+        {
+            renderItem(player, offhandItem, 0, false, offhandMirrorSprite);
+
+            int col = Item::items[offhandItem->id]->getColor(offhandItem, 1);
+            float red = ((col >> 16) & 0xff) / 255.0f;
+            float green = ((col >> 8) & 0xff) / 255.0f;
+            float blue = ((col) & 0xff) / 255.0f;
+
+            glColor4f(br * red, br * green, br * blue, 1);
+            renderItem(player, offhandItem, 1, false, offhandMirrorSprite);
+        }
+        else
+        {
+            renderItem(player, offhandItem, 0, false, offhandMirrorSprite);
+        }
+
+        glDisable(GL_RESCALE_NORMAL);
+        glPopMatrix();
+    }
+
     Lighting::turnOff();
-
 }
-
 void ItemInHandRenderer::renderScreenEffect(float a)
 {
     glDisable(GL_ALPHA_TEST);
@@ -918,52 +1124,164 @@ void ItemInHandRenderer::renderFire(float a)
 void ItemInHandRenderer::tick()
 {
     oHeight = height;
-
+    m_oOffhandHeight = m_offhandHeight;
+    m_oOffhandUseAnim = m_offhandUseAnim;
 
     shared_ptr<Player> player = minecraft->player;
+    if (player == nullptr || player->inventory == nullptr)
+    {
+        selectedItem = nullptr;
+        height = 0.0f;
+        oHeight = 0.0f;
+
+        m_offhandRenderItem = nullptr;
+        m_offhandPendingItem = nullptr;
+
+        m_offhandHeight = 0.0f;
+        m_oOffhandHeight = 0.0f;
+
+        m_offhandUseAnim = 0.0f;
+        m_oOffhandUseAnim = 0.0f;
+        return;
+    }
+
     shared_ptr<ItemInstance> nextTile = player->inventory->getSelected();
 
     bool matches = lastSlot == player->inventory->selected && nextTile == selectedItem;
+
     if (selectedItem == nullptr && nextTile == nullptr)
-	{
+    {
         matches = true;
     }
-    if (nextTile != nullptr && selectedItem != nullptr && nextTile != selectedItem && nextTile->id == selectedItem->id && nextTile->getAuxValue() == selectedItem->getAuxValue())
-	{
+
+    if (nextTile != nullptr &&
+        selectedItem != nullptr &&
+        nextTile != selectedItem &&
+        nextTile->id == selectedItem->id &&
+        nextTile->getAuxValue() == selectedItem->getAuxValue())
+    {
         selectedItem = nextTile;
         matches = true;
     }
 
     float max = 0.4f;
-    float tHeight = matches ? 1.0f : 0;
+    float tHeight = matches ? 1.0f : 0.0f;
     float dd = tHeight - height;
+
     if (dd < -max) dd = -max;
     if (dd > max) dd = max;
 
     height += dd;
+
     if (height < 0.1f)
-	{
+    {
         selectedItem = nextTile;
         lastSlot = player->inventory->selected;
     }
 
+    shared_ptr<ItemInstance> currentOffhand = player->inventory->getOffhand();
+
+    const bool currentHasItem =
+        currentOffhand != nullptr && currentOffhand->count > 0;
+
+    const bool cachedHasItem =
+        m_offhandRenderItem != nullptr && m_offhandRenderItem->count > 0;
+
+    const bool sameItem =
+        sameOffhandItem(m_offhandRenderItem, currentOffhand);
+
+    if (currentHasItem && cachedHasItem && !sameItem)
+    {
+        if (m_offhandPendingItem == nullptr ||
+            !sameOffhandItem(m_offhandPendingItem, currentOffhand))
+        {
+            m_offhandPendingItem = currentOffhand->copy();
+        }
+    }
+
+    float targetHeight = 0.0f;
+
+    if (!currentHasItem)
+    {
+        targetHeight = 0.0f;
+    }
+    else if (m_offhandPendingItem != nullptr)
+    {
+        // Lower before swapping visible offhand item, then raise again.
+        targetHeight = 0.0f;
+    }
+    else
+    {
+        targetHeight = 1.0f;
+    }
+
+    m_offhandHeight = approach(m_offhandHeight, targetHeight, 0.4f);
+
+    if (!currentHasItem)
+    {
+        if (m_offhandHeight <= 0.05f)
+        {
+            m_offhandRenderItem = nullptr;
+            m_offhandPendingItem = nullptr;
+        }
+    }
+    else if (!cachedHasItem)
+    {
+        m_offhandRenderItem = currentOffhand->copy();
+        m_offhandPendingItem = nullptr;
+    }
+    else if (m_offhandPendingItem != nullptr && m_offhandHeight <= 0.35f)
+    {
+        m_offhandRenderItem = m_offhandPendingItem;
+        m_offhandPendingItem = nullptr;
+    }
+
+    // Offhand use/place animation decay.
+    // itemPlacedOffhand()/itemUsedOffhand() set this to 1.0f.
+    // It must decay toward 0 so render() gets visible motion values.
+    if (m_offhandUseAnim > 0.0f)
+    {
+        m_offhandUseAnim -= 0.20f;
+
+        if (m_offhandUseAnim < 0.0f)
+        {
+            m_offhandUseAnim = 0.0f;
+        }
+    }
 }
 
 void ItemInHandRenderer::reset()
 {
 	selectedItem = nullptr;
+  m_offhandRenderItem = nullptr;
+  m_offhandPendingItem = nullptr;
 	lastSlot = -1;
-	height = 0.0f;
-	oHeight = 0.0f;
+    height = 0.0f;
+    oHeight = 0.0f;
+
+    m_offhandHeight = 0.0f;
+    m_oOffhandHeight = 0.0f;
+
+    m_offhandUseAnim = 0.0f;
+    m_oOffhandUseAnim = 0.0f;
 }
 
 void ItemInHandRenderer::itemPlaced()
 {
-	height = 0;
+    height = 0;
 }
 
 void ItemInHandRenderer::itemUsed()
 {
-	height = 0;
+    height = 0;
 }
 
+void ItemInHandRenderer::itemPlacedOffhand()
+{
+    m_offhandUseAnim = 1.0f;
+}
+
+void ItemInHandRenderer::itemUsedOffhand()
+{
+    m_offhandUseAnim = 1.0f;
+}

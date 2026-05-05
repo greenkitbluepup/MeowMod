@@ -18,12 +18,13 @@ UseItemPacket::UseItemPacket()
 	z = 0;
 	face = 0;
 	item = nullptr;
+  hand = 0;
 	clickX = 0.0f;
 	clickY = 0.0f;
 	clickZ = 0.0f;
 }
 
-UseItemPacket::UseItemPacket(int x, int y, int z, int face, shared_ptr<ItemInstance> item, float clickX, float clickY, float clickZ) 
+UseItemPacket::UseItemPacket(int x, int y, int z, int face, shared_ptr<ItemInstance> item, unsigned char hand, float clickX, float clickY, float clickZ) 
 {
 	this->x = x;
 	this->y = y;
@@ -31,6 +32,7 @@ UseItemPacket::UseItemPacket(int x, int y, int z, int face, shared_ptr<ItemInsta
 	this->face = face;
 	// 4J - take copy of item as we want our packets to have full ownership of any referenced data
 	this->item = item ? item->copy() : shared_ptr<ItemInstance>();
+  this->hand = hand;
 	this->clickX = clickX;
 	this->clickY = clickY;
 	this->clickZ = clickZ;
@@ -43,6 +45,7 @@ void UseItemPacket::read(DataInputStream *dis) //throws IOException
 	z = dis->readInt();
 	face = dis->read();
 	item = readItem(dis);
+  hand = static_cast<unsigned char>(dis->read());
 	clickX = dis->readUnsignedByte() / CLICK_ACCURACY;
 	clickY = dis->readUnsignedByte() / CLICK_ACCURACY;
 	clickZ = dis->readUnsignedByte() / CLICK_ACCURACY;
@@ -56,6 +59,7 @@ void UseItemPacket::write(DataOutputStream *dos) //throws IOException
 	dos->write(face);
 
 	writeItem(item, dos);
+  dos->write(hand);
 	dos->write(static_cast<int>(clickX * CLICK_ACCURACY));
 	dos->write(static_cast<int>(clickY * CLICK_ACCURACY));
 	dos->write(static_cast<int>(clickZ * CLICK_ACCURACY));
@@ -68,7 +72,7 @@ void UseItemPacket::handle(PacketListener *listener)
 
 int UseItemPacket::getEstimatedSize()
 {
-	return 15;
+   return 16;
 }
 
 int UseItemPacket::getX()
@@ -94,6 +98,11 @@ int UseItemPacket::getFace()
 shared_ptr<ItemInstance> UseItemPacket::getItem()
 {
 	return item;
+}
+
+unsigned char UseItemPacket::getHand()
+{
+	return hand;
 }
 
 float UseItemPacket::getClickX()

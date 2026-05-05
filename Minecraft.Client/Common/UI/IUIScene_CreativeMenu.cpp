@@ -11,6 +11,7 @@
 #include "..\..\..\Minecraft.World\net.minecraft.world.item.enchantment.h"
 #include "..\..\..\Minecraft.World\net.minecraft.world.entity.h"
 #include "..\..\..\Minecraft.World\net.minecraft.world.entity.animal.h"
+#include "..\..\..\Minecraft.World\ContentHooks.h"
 #include "..\..\..\Minecraft.World\JavaMath.h"
 
 // 4J JEV - Images for each tab.
@@ -662,6 +663,29 @@ void IUIScene_CreativeMenu::staticCtor()
 			ITEM_AUX(Item::potion_Id,MACRO_MAKEPOTION_AUXVAL(MASK_SPLASH, MASK_LEVEL2EXTENDED, MASK_STRENGTH))
 			ITEM_AUX(Item::potion_Id,MACRO_MAKEPOTION_AUXVAL(MASK_SPLASH, MASK_EXTENDED, MASK_SLOWNESS))
 			ITEM_AUX(Item::potion_Id,MACRO_MAKEPOTION_AUXVAL(MASK_SPLASH, MASK_LEVEL2, MASK_INSTANTDAMAGE))
+
+	if (g_hostCollectModCreativeItems)
+	{
+		int modCount = g_hostCollectModCreativeItems(nullptr, 0);
+		if (modCount > 0)
+		{
+			std::vector<ModCreativeItemHost> modItems;
+			modItems.resize(modCount);
+			g_hostCollectModCreativeItems(modItems.data(), static_cast<int>(modItems.size()));
+
+			for (const ModCreativeItemHost& mi : modItems)
+			{
+				if (mi.itemId <= 0)
+					continue;
+
+				int group = mi.categoryId;
+				if (group < 0 || group >= eCreativeInventoryGroupsCount)
+					group = eCreativeInventory_Misc;
+
+				categoryGroups[group].push_back(shared_ptr<ItemInstance>(new ItemInstance(mi.itemId, 1, mi.aux)));
+			}
+		}
+	}
 
 
 		specs = new TabSpec*[eCreativeInventoryTab_COUNT];

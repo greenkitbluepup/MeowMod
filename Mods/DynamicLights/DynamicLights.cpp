@@ -2,6 +2,8 @@
 #include "ModAPI.h"
 #include "DynamicLightManager.h"
 
+#include <cstring>
+
 static ModHostAPI           g_api{};
 static DynamicLightManager  g_lights;
 
@@ -54,6 +56,11 @@ static void DestroyChunkLightSnapshot(void* snapshot)
     delete static_cast<DynamicLightSnapshot*>(snapshot);
 }
 
+static void OnTileChanged(int x, int y, int z)
+{
+    g_lights.notifyBlockChanged(x, y, z);
+}
+
 // ---------------------------------------------------------------------------
 // Entry / exit
 // ---------------------------------------------------------------------------
@@ -76,6 +83,9 @@ extern "C" __declspec(dllexport) bool InitMod(ModHostAPI* api)
     g_api.registerBeginEmitterFeed(&BeginEmitterFeed);
     g_api.registerNotifyEmitter(&NotifyEmitter);
     g_api.registerEndEmitterFeed(&EndEmitterFeed);
+
+    if (g_api.registerTileChanged)
+        g_api.registerTileChanged(&OnTileChanged);
 
     g_api.log("[DynamicLightMod] All hooks registered");
     return true;

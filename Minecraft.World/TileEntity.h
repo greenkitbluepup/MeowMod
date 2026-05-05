@@ -1,4 +1,6 @@
 #pragma once
+#pragma once
+
 using namespace std;
 
 #include "HashExtension.h"
@@ -14,6 +16,7 @@ class TileEntity : public enable_shared_from_this<TileEntity>
 {
 public:
 	static void staticCtor();
+  static void registerExternalFactory(const wstring& id, tileEntityCreateFn createFn);
 	virtual eINSTANCEOF GetType() { return eTYPE_TILEENTITY; }
 private:
 	typedef unordered_map<wstring, tileEntityCreateFn> idToCreateMapType;
@@ -23,6 +26,7 @@ private:
 	static void setId(tileEntityCreateFn createFn, eINSTANCEOF clas, wstring id);
 	bool remove;
 	unsigned char renderRemoveStage;	// 4J added
+	wstring externalId;
 
 public:
 	Level *level;

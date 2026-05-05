@@ -3,6 +3,10 @@ set(BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Common/")
 set(_MINECRAFT_CLIENT_COMMON_ROOT
   "${CMAKE_CURRENT_SOURCE_DIR}/ClassDiagram.cd"
   "${CMAKE_CURRENT_SOURCE_DIR}/ReadMe.txt"
+  "${CMAKE_CURRENT_SOURCE_DIR}/AbstractContainerScreen.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/AbstractContainerScreen.h"
+  "${CMAKE_CURRENT_SOURCE_DIR}/InventoryScreen.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/InventoryScreen.h"
 )
 source_group("" FILES ${_MINECRAFT_CLIENT_COMMON_ROOT})
 

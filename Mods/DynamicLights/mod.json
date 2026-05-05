@@ -1,0 +1,7 @@
+{
+    "id": "dynamiclights",
+    "name": "Dynamic Lights",
+    "version": "1.0.0",
+    "description": "Entities holding light-emitting items illuminate the world around them.",
+    "author": "MeowMod"
+}

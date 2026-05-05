@@ -25,6 +25,9 @@ add_custom_command(TARGET DynamicLights POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:DynamicLights>"
         "$<TARGET_FILE_DIR:Minecraft.Client>/mods/DynamicLights.dll"
-    COMMENT "Copying DynamicLights.dll to mods/ output folder"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/mod.json"
+        "$<TARGET_FILE_DIR:Minecraft.Client>/mods/DynamicLights.json"
+    COMMENT "Copying DynamicLights.dll and mod.json to mods/ output folder"
     VERBATIM
 )

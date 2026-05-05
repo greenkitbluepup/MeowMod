@@ -1,0 +1,20 @@
+{
+  "id": "offhandmod",
+  "name": "Offhand Mod",
+  "version": "1.0.0",
+  "description": "Adds a modern Java-style offhand slot foundation.",
+  "author": "MeowMod",
+  "optional": [
+    {
+      "id": "dynamiclightmod",
+      "version": ">=1.0.0"
+    }
+  ],
+  "permissions": [
+    "events",
+    "rendering",
+    "world.modify",
+    "network.client",
+    "network.server"
+  ]
+}

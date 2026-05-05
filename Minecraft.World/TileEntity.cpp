@@ -5,6 +5,7 @@
 #include "net.minecraft.world.level.tile.entity.h"
 #include "TileEntity.h"
 #include "PistonPieceEntity.h"
+#include "ContentHooks.h"
 
 
 
@@ -32,6 +33,17 @@ void TileEntity::staticCtor()
 	TileEntity::setId(DaylightDetectorTileEntity::create, eTYPE_DAYLIGHTDETECTORTILEENTITY, L"DLDetector");
 	TileEntity::setId(HopperTileEntity::create, eTYPE_HOPPERTILEENTITY, L"Hopper");
 	TileEntity::setId(ComparatorTileEntity::create, eTYPE_COMPARATORTILEENTITY, L"Comparator");
+
+	if (g_registerModTileEntities)
+		g_registerModTileEntities();
+}
+
+void TileEntity::registerExternalFactory(const wstring& id, tileEntityCreateFn createFn)
+{
+	if (id.empty() || !createFn)
+		return;
+	if (idCreateMap.find(id) == idCreateMap.end())
+		idCreateMap.insert(idToCreateMapType::value_type(id, createFn));
 }
 
 void TileEntity::setId(tileEntityCreateFn createFn, eINSTANCEOF clas, wstring id)
@@ -52,6 +64,7 @@ TileEntity::TileEntity()
 	data = -1;
 	tile = nullptr;
 	renderRemoveStage = e_RenderRemoveStageKeep;
+   externalId = L"";
 }
 
 Level *TileEntity::getLevel()
@@ -78,17 +91,22 @@ void TileEntity::load(CompoundTag *tag)
 
 void TileEntity::save(CompoundTag *tag)
 {
-    auto it = classIdMap.find(this->GetType());
-    if ( it ==  classIdMap.end() )
-	{
-		// TODO 4J Stu - Some sort of exception handling
-		//throw new RuntimeException(this->getClass() + " is missing a mapping! This is a bug!");
+ wstring saveId;
+	auto it = classIdMap.find(this->GetType());
+	if (it != classIdMap.end())
+		saveId = ((*it).second);
+	else if (!externalId.empty())
+		saveId = externalId;
+	else
 		return;
-	}
-	tag->putString(L"id", ( (*it).second ) );
+
+	tag->putString(L"id", saveId);
 	tag->putInt(L"x", x);
 	tag->putInt(L"y", y);
 	tag->putInt(L"z", z);
+
+	if (g_modTileEntityOnSave)
+		g_modTileEntityOnSave(saveId.c_str(), static_cast<void*>(this), static_cast<void*>(tag));
 }
 
 void TileEntity::tick()
@@ -98,12 +116,16 @@ void TileEntity::tick()
 shared_ptr<TileEntity> TileEntity::loadStatic(CompoundTag *tag)
 {
 	shared_ptr<TileEntity> entity = nullptr;
-    auto it = idCreateMap.find(tag->getString(L"id"));
+    wstring loadId = tag->getString(L"id");
+	auto it = idCreateMap.find(loadId);
     if (it != idCreateMap.end())
         entity = shared_ptr<TileEntity>(it->second());
 	if (entity != nullptr)
 	{
+      entity->externalId = loadId;
 		entity->load(tag);
+       if (g_modTileEntityOnLoad)
+			g_modTileEntityOnLoad(loadId.c_str(), static_cast<void*>(entity.get()), static_cast<void*>(tag));
 	}
 	else
 	{

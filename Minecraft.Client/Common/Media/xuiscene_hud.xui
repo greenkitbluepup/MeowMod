@@ -149,6 +149,16 @@
 <Visual>ItemHUDHotbar</Visual>
 </Properties>
 </XuiControl>
+<XuiControl>
+<Properties>
+<Id>OffhandSlot</Id>
+<Width>24.000000</Width>
+<Height>24.000000</Height>
+<Position>191.000061,0.000061,0.000000</Position>
+<ClassOverride>CXuiCtrlSlotItem</ClassOverride>
+<Visual>ItemHUDHotbar</Visual>
+</Properties>
+</XuiControl>
 </XuiGroup>
 <XuiProgressBar>
 <Properties>

@@ -25,7 +25,9 @@
 #include "..\Minecraft.World\StringHelpers.h"
 #include "..\Minecraft.World\Socket.h"
 #include "..\Minecraft.World\Achievements.h"
+#include "..\Minecraft.World\ContentHooks.h"
 #include "..\Minecraft.World\net.minecraft.h"
+#include "..\Minecraft.Mods\ModLoader.h"
 #include "EntityTracker.h"
 #include "ServerConnection.h"
 #include "..\Minecraft.World\GenericStats.h"
@@ -49,6 +51,126 @@ namespace
 	const double kInteractReachSq = 6.0 * 6.0;
 	// Stricter max squared distance used when LOS is blocked to reduce wall-hit abuse.
 	const double kInteractBlockedReachSq = 3.0 * 3.0;
+
+	static const wchar_t* kModApiPayloadChannel = L"MC|ModAPI";
+	static const int kModMsg_ClientToServer = 1;
+	static const int kModMsg_ServerToClient = 2;
+	static const int kModMsg_RegistryHandshake = 3;
+
+	static std::string narrowAsciiLocal(const std::wstring& w)
+	{
+		std::string s;
+		s.reserve(w.size());
+		for (wchar_t c : w)
+			s.push_back((c >= 0 && c <= 127) ? static_cast<char>(c) : '?');
+		return s;
+	}
+
+	static bool BuildModApiPayload(int msgType,
+								   const std::wstring& channel,
+								   const void* payload,
+								   int size,
+								   byteArray* outData)
+	{
+		if (!outData || size < 0)
+			return false;
+
+		ByteArrayOutputStream baos;
+		DataOutputStream dos(&baos);
+		dos.writeByte(static_cast<byte>(msgType));
+		Packet::writeUtf(channel, &dos);
+		dos.writeInt(size);
+		if (size > 0)
+		{
+			if (!payload)
+				return false;
+			byteArray body(static_cast<unsigned int>(size));
+			memcpy(body.data, payload, static_cast<size_t>(size));
+			dos.write(body);
+		}
+		*outData = baos.toByteArray();
+		return true;
+	}
+
+	static bool ParseModApiPayload(const byteArray& inData,
+							   int* outMsgType,
+							   std::wstring* outChannel,
+							   byteArray* outPayload)
+	{
+		if (!outMsgType || !outChannel || !outPayload)
+			return false;
+
+		ByteArrayInputStream bais(inData);
+		DataInputStream dis(&bais);
+		int msgType = dis.readByte() & 0xFF;
+		std::wstring channel = Packet::readUtf(&dis, 128);
+		int size = dis.readInt();
+		if (size < 0)
+			return false;
+
+		byteArray payload;
+		if (size > 0)
+		{
+			payload = byteArray(static_cast<unsigned int>(size));
+			dis.readFully(payload);
+		}
+
+		*outMsgType = msgType;
+		*outChannel = channel;
+		*outPayload = payload;
+		return true;
+	}
+
+	static bool HostSendModPacketToClient(void* player,
+									 const wchar_t* channel,
+									 const void* payload,
+									 int size)
+	{
+		if (!player)
+			return false;
+
+		ServerPlayer* serverPlayer = static_cast<ServerPlayer*>(player);
+		if (!serverPlayer->connection)
+			return false;
+
+		byteArray data;
+		if (!BuildModApiPayload(kModMsg_ServerToClient, channel ? channel : L"", payload, size, &data))
+			return false;
+
+		serverPlayer->connection->send(std::make_shared<CustomPayloadPacket>(kModApiPayloadChannel, data));
+		return true;
+	}
+
+	static int HostBroadcastModPacketToTracking(void* level,
+										 int x, int y, int z,
+										 int radius,
+										 const wchar_t* channel,
+										 const void* payload,
+										 int size)
+	{
+		if (!level)
+			return 0;
+
+		Level* lvl = static_cast<Level*>(level);
+		int sent = 0;
+		for (auto& p : lvl->players)
+		{
+			shared_ptr<ServerPlayer> sp = dynamic_pointer_cast<ServerPlayer>(p);
+			if (!sp || !sp->connection)
+				continue;
+
+			double dx = sp->x - x;
+			double dy = sp->y - y;
+			double dz = sp->z - z;
+			double r2 = static_cast<double>(radius) * static_cast<double>(radius);
+			if ((dx * dx + dy * dy + dz * dz) > r2)
+				continue;
+
+			if (HostSendModPacketToClient(sp.get(), channel, payload, size))
+				++sent;
+		}
+		return sent;
+	}
 }
 
 Random PlayerConnection::random;
@@ -92,6 +214,8 @@ PlayerConnection::PlayerConnection(MinecraftServer *server, Connection *connecti
 	}
 
 	setShowOnMaps(app.GetGameHostOption(eGameHostOption_Gamertags)!=0?true:false);
+   g_hostSendModPacketToClient = &HostSendModPacketToClient;
+	g_hostBroadcastModPacketToTracking = &HostBroadcastModPacketToTracking;
 }
 
 PlayerConnection::~PlayerConnection()
@@ -495,8 +619,29 @@ void PlayerConnection::handlePlayerAction(shared_ptr<PlayerActionPacket> packet)
 
 void PlayerConnection::handleUseItem(shared_ptr<UseItemPacket> packet)
 {
+   struct PlayerUseItemPayload
+	{
+		int x;
+		int y;
+		int z;
+		int face;
+	} payload{ packet->getX(), packet->getY(), packet->getZ(), packet->getFace() };
+	g_modLoader.emitEvent("player.use_item", player.get(), &payload, sizeof(payload));
+
 	ServerLevel *level = server->getLevel(player->dimension);
-	shared_ptr<ItemInstance> item = player->inventory->getSelected();
+   shared_ptr<ItemInstance> selected = player->inventory->getSelected();
+	shared_ptr<ItemInstance> offhand = player->inventory->getOffhand();
+	shared_ptr<ItemInstance> item = packet->getHand() == 1 ? offhand : selected;
+	app.DebugPrintf(
+		"[OFFHAND_USE_SERVER] packetHand=%d selected=%d:%d offhand=%d:%d using=%d:%d\n",
+		static_cast<int>(packet->getHand()),
+		selected ? selected->id : -1,
+		selected ? selected->count : 0,
+		offhand ? offhand->id : -1,
+		offhand ? offhand->count : 0,
+		item ? item->id : -1,
+		item ? item->count : 0
+	);
 	bool informClient = false;
 	int x = packet->getX();
 	int y = packet->getY();
@@ -552,7 +697,9 @@ void PlayerConnection::handleUseItem(shared_ptr<UseItemPacket> packet)
 
 	}
 
-	item = player->inventory->getSelected();
+    selected = player->inventory->getSelected();
+	offhand = player->inventory->getOffhand();
+	item = packet->getHand() == 1 ? offhand : selected;
 
 	bool forceClientUpdate = false;
 	if(item != nullptr && packet->getItem() == nullptr)
@@ -1495,6 +1642,34 @@ void PlayerConnection::handlePlayerAbilities(shared_ptr<PlayerAbilitiesPacket> p
 
 void PlayerConnection::handleCustomPayload(shared_ptr<CustomPayloadPacket> customPayloadPacket)
 {
+   if (customPayloadPacket->identifier.compare(kModApiPayloadChannel) == 0)
+	{
+		int msgType = 0;
+		std::wstring channelW;
+		byteArray payload;
+		if (ParseModApiPayload(customPayloadPacket->data, &msgType, &channelW, &payload))
+		{
+			if (msgType == kModMsg_ClientToServer)
+			{
+				std::string channel = narrowAsciiLocal(channelW);
+				g_modLoader.dispatchServerPacket(player.get(), channel.c_str(), payload.data, static_cast<int>(payload.length));
+			}
+			else if (msgType == kModMsg_RegistryHandshake)
+			{
+				std::string remote;
+				if (payload.data && payload.length > 0)
+                    remote.assign(reinterpret_cast<const char*>(payload.data), payload.length);
+				std::string reason;
+				if (!g_modLoader.validateRegistryHandshakeBlob(remote.c_str(), &reason))
+				{
+					app.DebugPrintf("Mod registry mismatch, disconnecting client");
+					disconnect(DisconnectPacket::eDisconnect_Kicked);
+				}
+			}
+		}
+		return;
+	}
+
 #if 0
 	if (CustomPayloadPacket.CUSTOM_BOOK_PACKET.equals(customPayloadPacket.identifier))
 	{

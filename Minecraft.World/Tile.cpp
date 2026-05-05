@@ -1,4 +1,6 @@
 #include "stdafx.h"
+#include "stdafx.h"
+
 #include "net.minecraft.stats.h"
 #include "net.minecraft.locale.h"
 #include "net.minecraft.world.entity.h"
@@ -16,6 +18,7 @@
 #include "net.minecraft.world.h"
 #include "net.minecraft.h"
 #include "Tile.h"
+#include "ContentHooks.h"
 
 wstring Tile::TILE_DESCRIPTION_PREFIX = L"Tile.";
 
@@ -508,6 +511,10 @@ void Tile::staticCtor()
 	}
 	Tile::transculent[0] = true;
 
+	// Let mods register their tiles while Tile::tiles[] is live.
+	if (g_registerModTiles)
+		g_registerModTiles();
+
 	Stats::buildItemStats();
 
 	// */
@@ -915,6 +922,8 @@ void Tile::spawnResources(Level *level, int x, int y, int z, int data, int playe
 void Tile::spawnResources(Level *level, int x, int y, int z, int data, float odds, int playerBonusLevel)
 {
 	if (level->isClientSide) return;
+  if (g_modApplyBlockDrops && g_modApplyBlockDrops(id, level, x, y, z, playerBonusLevel))
+		return;
 	int count = getResourceCountForLootBonus(playerBonusLevel, level->random);
 	for (int i = 0; i < count; i++)
 	{

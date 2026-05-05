@@ -164,8 +164,12 @@ void PlayerRenderer::render(shared_ptr<Entity> _mob, double x, double y, double 
 	if(mob == nullptr) return;
 	if(mob->hasInvisiblePrivilege()) return;
 
-    shared_ptr<ItemInstance> item = mob->inventory->getSelected();
-    armorParts1->holdingRightHand = armorParts2->holdingRightHand = humanoidModel->holdingRightHand = item != nullptr ? 1 : 0;
+	shared_ptr<ItemInstance> item = mob->inventory->getSelected();
+	armorParts1->holdingRightHand = armorParts2->holdingRightHand = humanoidModel->holdingRightHand = item != nullptr ? 1 : 0;
+
+	shared_ptr<ItemInstance> offhandSetup = mob->inventory ? mob->inventory->getOffhand() : nullptr;
+	const int holdingLeft = (offhandSetup != nullptr && offhandSetup->count > 0) ? 1 : 0;
+	armorParts1->holdingLeftHand = armorParts2->holdingLeftHand = humanoidModel->holdingLeftHand = holdingLeft;
 	if (item != nullptr)
 	{
 		if (mob->getUseItemDuration() > 0)
@@ -264,34 +268,35 @@ void PlayerRenderer::render(shared_ptr<Entity> _mob, double x, double y, double 
 		}
 	}
 	armorParts1->bowAndArrow = armorParts2->bowAndArrow = humanoidModel->bowAndArrow = false;
-    armorParts1->sneaking = armorParts2->sneaking = humanoidModel->sneaking = false;
-    armorParts1->holdingRightHand = armorParts2->holdingRightHand = humanoidModel->holdingRightHand = 0;
+	armorParts1->sneaking = armorParts2->sneaking = humanoidModel->sneaking = false;
+	armorParts1->holdingRightHand = armorParts2->holdingRightHand = humanoidModel->holdingRightHand = 0;
+	armorParts1->holdingLeftHand = armorParts2->holdingLeftHand = humanoidModel->holdingLeftHand = 0;
 
 }
 
 void PlayerRenderer::additionalRendering(shared_ptr<LivingEntity> _mob, float a)
 {
 	float brightness = SharedConstants::TEXTURE_LIGHTING ? 1 : _mob->getBrightness(a);
-    glColor3f(brightness, brightness, brightness);
+	glColor3f(brightness, brightness, brightness);
 
-	LivingEntityRenderer::additionalRendering(_mob,a);
+	LivingEntityRenderer::additionalRendering(_mob, a);
 	LivingEntityRenderer::renderArrows(_mob, a);
 
 	// 4J - dynamic cast required because we aren't using templates/generics in our version
 	shared_ptr<Player> mob = dynamic_pointer_cast<Player>(_mob);
 
-    shared_ptr<ItemInstance> headGear = mob->inventory->getArmor(3);
-    if (headGear != nullptr)
+	shared_ptr<ItemInstance> headGear = mob->inventory->getArmor(3);
+	if (headGear != nullptr)
 	{
 		// don't render the pumpkin for the skins
-		unsigned int uiAnimOverrideBitmask = mob->getSkinAnimOverrideBitmask( mob->getCustomSkin());
+		unsigned int uiAnimOverrideBitmask = mob->getSkinAnimOverrideBitmask(mob->getCustomSkin());
 
-		if((uiAnimOverrideBitmask&(1<<HumanoidModel::eAnim_DontRenderArmour))==0)
+		if ((uiAnimOverrideBitmask & (1 << HumanoidModel::eAnim_DontRenderArmour)) == 0)
 		{
 			glPushMatrix();
 			humanoidModel->head->translateTo(1 / 16.0f);
 
-			if(headGear->getItem()->id < 256)
+			if (headGear->getItem()->id < 256)
 			{
 				if (TileRenderer::canRender(Tile::tiles[headGear->id]->getRenderShape()))
 				{
@@ -318,87 +323,87 @@ void PlayerRenderer::additionalRendering(shared_ptr<LivingEntity> _mob, float a)
 
 			glPopMatrix();
 		}
-    }
+	}
 
 	// need to add a custom texture for deadmau5
-	if (mob != nullptr && app.isXuidDeadmau5( mob->getXuid() ) && bindTexture(mob->customTextureUrl, L"" ))
+	if (mob != nullptr && app.isXuidDeadmau5(mob->getXuid()) && bindTexture(mob->customTextureUrl, L""))
 	{
-        for (int i = 0; i < 2; i++)
+		for (int i = 0; i < 2; i++)
 		{
-            float yr = (mob->yRotO + (mob->yRot - mob->yRotO) * a) - (mob->yBodyRotO + (mob->yBodyRot - mob->yBodyRotO) * a);
-            float xr = mob->xRotO + (mob->xRot - mob->xRotO) * a;
-            glPushMatrix();
-            glRotatef(yr, 0, 1, 0);
-            glRotatef(xr, 1, 0, 0);
-            glTranslatef((6 / 16.0f) * (i * 2 - 1), 0, 0);
-            glTranslatef(0, -6 / 16.0f, 0);
-            glRotatef(-xr, 1, 0, 0);
-            glRotatef(-yr, 0, 1, 0);
+			float yr = (mob->yRotO + (mob->yRot - mob->yRotO) * a) - (mob->yBodyRotO + (mob->yBodyRot - mob->yBodyRotO) * a);
+			float xr = mob->xRotO + (mob->xRot - mob->xRotO) * a;
+			glPushMatrix();
+			glRotatef(yr, 0, 1, 0);
+			glRotatef(xr, 1, 0, 0);
+			glTranslatef((6 / 16.0f) * (i * 2 - 1), 0, 0);
+			glTranslatef(0, -6 / 16.0f, 0);
+			glRotatef(-xr, 1, 0, 0);
+			glRotatef(-yr, 0, 1, 0);
 
-            float s = 8 / 6.0f;
-            glScalef(s, s, s);
-            humanoidModel->renderEars(1 / 16.0f,true);
-            glPopMatrix();
-        }
-    }
+			float s = 8 / 6.0f;
+			glScalef(s, s, s);
+			humanoidModel->renderEars(1 / 16.0f, true);
+			glPopMatrix();
+		}
+	}
 
 	// 4J: removed
 	/*boolean loaded = mob->getCloakTexture()->isLoaded();
-    boolean b1 = !mob->isInvisible();
-    boolean b2 = !mob->isCapeHidden();*/
+	boolean b1 = !mob->isInvisible();
+	boolean b2 = !mob->isCapeHidden();*/
 	if (bindTexture(mob->customTextureUrl2, L"") && !mob->isInvisible())
 	{
-        glPushMatrix();
-        glTranslatef(0, 0, 2 / 16.0f);
+		glPushMatrix();
+		glTranslatef(0, 0, 2 / 16.0f);
 
-        double xd = (mob->xCloakO + (mob->xCloak - mob->xCloakO) * a) - (mob->xo + (mob->x - mob->xo) * a);
-        double yd = (mob->yCloakO + (mob->yCloak - mob->yCloakO) * a) - (mob->yo + (mob->y - mob->yo) * a);
-        double zd = (mob->zCloakO + (mob->zCloak - mob->zCloakO) * a) - (mob->zo + (mob->z - mob->zo) * a);
+		double xd = (mob->xCloakO + (mob->xCloak - mob->xCloakO) * a) - (mob->xo + (mob->x - mob->xo) * a);
+		double yd = (mob->yCloakO + (mob->yCloak - mob->yCloakO) * a) - (mob->yo + (mob->y - mob->yo) * a);
+		double zd = (mob->zCloakO + (mob->zCloak - mob->zCloakO) * a) - (mob->zo + (mob->z - mob->zo) * a);
 
-        float yr = mob->yBodyRotO + (mob->yBodyRot - mob->yBodyRotO) * a;
+		float yr = mob->yBodyRotO + (mob->yBodyRot - mob->yBodyRotO) * a;
 
-        double xa = Mth::sin(yr * PI / 180);
-        double za = -Mth::cos(yr * PI / 180);
+		double xa = Mth::sin(yr * PI / 180);
+		double za = -Mth::cos(yr * PI / 180);
 
-        float flap = static_cast<float>(yd) * 10;
-        if (flap < -6) flap = -6;
-        if (flap > 32) flap = 32;
-        float lean = static_cast<float>(xd * xa + zd * za) * 100;
-        float lean2 = static_cast<float>(xd * za - zd * xa) * 100;
-        if (lean < 0) lean = 0;
+		float flap = static_cast<float>(yd) * 10;
+		if (flap < -6) flap = -6;
+		if (flap > 32) flap = 32;
+		float lean = static_cast<float>(xd * xa + zd * za) * 100;
+		float lean2 = static_cast<float>(xd * za - zd * xa) * 100;
+		if (lean < 0) lean = 0;
 
-        float pow = mob->oBob + (mob->bob - mob->oBob) * a;
+		float pow = mob->oBob + (mob->bob - mob->oBob) * a;
 
-        flap += sin((mob->walkDistO + (mob->walkDist - mob->walkDistO) * a) * 6) * 32 * pow;
-        if (mob->isSneaking())
+		flap += sin((mob->walkDistO + (mob->walkDist - mob->walkDistO) * a) * 6) * 32 * pow;
+		if (mob->isSneaking())
 		{
-            flap += 25;
-        }
+			flap += 25;
+		}
 
 		// 4J Stu - Fix for sprint-flying causing the cape to rotate up by 180 degrees or more
 		float xRot = 6.0f + lean / 2 + flap;
-		if(xRot > 64.0f) xRot = 64.0f;
+		if (xRot > 64.0f) xRot = 64.0f;
 
-        glRotatef(xRot, 1, 0, 0);
-        glRotatef(lean2 / 2, 0, 0, 1);
-        glRotatef(-lean2 / 2, 0, 1, 0);
-        glRotatef(180, 0, 1, 0);
-        humanoidModel->renderCloak(1 / 16.0f,true);
-        glPopMatrix();
-    }
+		glRotatef(xRot, 1, 0, 0);
+		glRotatef(lean2 / 2, 0, 0, 1);
+		glRotatef(-lean2 / 2, 0, 1, 0);
+		glRotatef(180, 0, 1, 0);
+		humanoidModel->renderCloak(1 / 16.0f, true);
+		glPopMatrix();
+	}
 
-    shared_ptr<ItemInstance> item = mob->inventory->getSelected();
+	shared_ptr<ItemInstance> item = mob->inventory->getSelected();
 
-    if (item != nullptr)
+	if (item != nullptr)
 	{
-        glPushMatrix();
-        humanoidModel->arm0->translateTo(1 / 16.0f);
-        glTranslatef(-1 / 16.0f, 7 / 16.0f, 1 / 16.0f);
+		glPushMatrix();
+		humanoidModel->arm0->translateTo(1 / 16.0f);
+		glTranslatef(-1 / 16.0f, 7 / 16.0f, 1 / 16.0f);
 
-        if (mob->fishing != nullptr)
+		if (mob->fishing != nullptr)
 		{
-            item = std::make_shared<ItemInstance>(Item::stick);
-        }
+			item = std::make_shared<ItemInstance>(Item::stick);
+		}
 
 		UseAnim anim = UseAnim_none;//null;
 		if (mob->getUseItemDuration() > 0)
@@ -406,14 +411,14 @@ void PlayerRenderer::additionalRendering(shared_ptr<LivingEntity> _mob, float a)
 			anim = item->getUseAnimation();
 		}
 
-        if (item->id < 256 && TileRenderer::canRender(Tile::tiles[item->id]->getRenderShape()))
+		if (item->id < 256 && TileRenderer::canRender(Tile::tiles[item->id]->getRenderShape()))
 		{
-            float s = 8 / 16.0f;
-            glTranslatef(-0 / 16.0f, 3 / 16.0f, -5 / 16.0f);
-            s *= 0.75f;
-            glRotatef(20, 1, 0, 0);
-            glRotatef(45, 0, 1, 0);
-            glScalef(-s, -s, s);
+			float s = 8 / 16.0f;
+			glTranslatef(-0 / 16.0f, 3 / 16.0f, -5 / 16.0f);
+			s *= 0.75f;
+			glRotatef(20, 1, 0, 0);
+			glRotatef(45, 0, 1, 0);
+			glScalef(-s, -s, s);
 		}
 		else if (item->id == Item::bow->id)
 		{
@@ -449,19 +454,19 @@ void PlayerRenderer::additionalRendering(shared_ptr<LivingEntity> _mob, float a)
 		}
 		else
 		{
-            float s = 6 / 16.0f;
-            glTranslatef(+4 / 16.0f, +3 / 16.0f, -3 / 16.0f);
-            glScalef(s, s, s);
-            glRotatef(60, 0, 0, 1);
-            glRotatef(-90, 1, 0, 0);
-            glRotatef(20, 0, 0, 1);
-        }
+			float s = 6 / 16.0f;
+			glTranslatef(+4 / 16.0f, +3 / 16.0f, -3 / 16.0f);
+			glScalef(s, s, s);
+			glRotatef(60, 0, 0, 1);
+			glRotatef(-90, 1, 0, 0);
+			glRotatef(20, 0, 0, 1);
+		}
 
 		if (item->getItem()->hasMultipleSpriteLayers())
 		{
 			for (int layer = 0; layer <= 1; layer++)
 			{
-				int col = item->getItem()->getColor(item,layer);
+				int col = item->getItem()->getColor(item, layer);
 				float red = ((col >> 16) & 0xff) / 255.0f;
 				float g = ((col >> 8) & 0xff) / 255.0f;
 				float b = ((col) & 0xff) / 255.0f;
@@ -473,15 +478,122 @@ void PlayerRenderer::additionalRendering(shared_ptr<LivingEntity> _mob, float a)
 		else
 		{
 			int col = item->getItem()->getColor(item, 0);
-            float red = ((col >> 16) & 0xff) / 255.0f;
-            float g = ((col >> 8) & 0xff) / 255.0f;
-            float b = ((col) & 0xff) / 255.0f;
+			float red = ((col >> 16) & 0xff) / 255.0f;
+			float g = ((col >> 8) & 0xff) / 255.0f;
+			float b = ((col) & 0xff) / 255.0f;
 
-            glColor4f(red, g, b, 1);
+			glColor4f(red, g, b, 1);
 			this->entityRenderDispatcher->itemInHandRenderer->renderItem(mob, item, 0);
 		}
 
-        glPopMatrix();
+		glPopMatrix();
+	}
+
+	// Third-person offhand item render (left arm).
+	shared_ptr<ItemInstance> offhandItem = mob->inventory ? mob->inventory->getOffhand() : nullptr;
+	if (offhandItem != nullptr && offhandItem->count > 0)
+	{
+		glPushMatrix();
+
+		humanoidModel->arm1->translateTo(1 / 16.0f);
+		glTranslatef(1 / 16.0f, 7 / 16.0f, 1 / 16.0f);
+
+		const bool offhandIsBlockModel =
+			offhandItem->id >= 0 &&
+			offhandItem->id < 256 &&
+			Tile::tiles[offhandItem->id] != nullptr &&
+			TileRenderer::canRender(Tile::tiles[offhandItem->id]->getRenderShape());
+
+		const bool mirrorOffhandSprite = false;
+
+		if (offhandIsBlockModel)
+		{
+			float s = 8 / 16.0f;
+			glTranslatef(0 / 16.0f, 3 / 16.0f, -5 / 16.0f);
+			s *= 0.75f;
+
+			glRotatef(20, 1, 0, 0);
+			glRotatef(-45, 0, 1, 0);
+
+			glScalef(s, -s, s);
+		}
+		else if (offhandItem->id == Item::bow->id)
+		{
+			float s = 10 / 16.0f;
+
+			glTranslatef(0 / 16.0f, 2 / 16.0f, 5 / 16.0f);
+			glRotatef(20, 0, 1, 0);
+			glScalef(s, -s, s);
+			glRotatef(-100, 1, 0, 0);
+			glRotatef(-45, 0, 1, 0);
+		}
+		else if (Item::items[offhandItem->id]->isHandEquipped())
+		{
+			float s = 10 / 16.0f;
+
+			if (Item::items[offhandItem->id]->isMirroredArt())
+			{
+				glRotatef(180, 0, 0, 1);
+				glTranslatef(0, -2 / 16.0f, 0);
+			}
+
+			glTranslatef(0, 3 / 16.0f, 0);
+			glScalef(s, -s, s);
+			glRotatef(-100, 1, 0, 0);
+			glRotatef(-45, 0, 1, 0);
+		}
+		else
+		{
+			float s = 6 / 16.0f;
+
+			// Copy normal third-person sprite holding exactly.
+			// Do not mirror UVs. The left arm attachment already puts it on the left side.
+			glTranslatef(+4 / 16.0f, +3 / 16.0f, -3 / 16.0f);
+			glScalef(s, s, s);
+			glRotatef(60, 0, 0, 1);
+			glRotatef(-90, 1, 0, 0);
+			glRotatef(20, 0, 0, 1);
+		}
+
+		if (offhandItem->getItem()->hasMultipleSpriteLayers())
+		{
+			for (int layer = 0; layer <= 1; layer++)
+			{
+				int col = offhandItem->getItem()->getColor(offhandItem, layer);
+				float red = ((col >> 16) & 0xff) / 255.0f;
+				float g = ((col >> 8) & 0xff) / 255.0f;
+				float b = ((col) & 0xff) / 255.0f;
+
+				glColor4f(red, g, b, 1);
+
+				this->entityRenderDispatcher->itemInHandRenderer->renderItem(
+					mob,
+					offhandItem,
+					layer,
+					false,
+					false
+				);
+			}
+		}
+		else
+		{
+			int col = offhandItem->getItem()->getColor(offhandItem, 0);
+			float red = ((col >> 16) & 0xff) / 255.0f;
+			float g = ((col >> 8) & 0xff) / 255.0f;
+			float b = ((col) & 0xff) / 255.0f;
+
+			glColor4f(red, g, b, 1);
+
+			this->entityRenderDispatcher->itemInHandRenderer->renderItem(
+				mob,
+				offhandItem,
+				0,
+				false,
+				false
+			);
+		}
+
+		glPopMatrix();
 	}
 }
 

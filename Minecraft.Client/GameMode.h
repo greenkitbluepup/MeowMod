@@ -8,6 +8,12 @@ class Entity;
 
 class Tutorial;
 
+enum class InteractionHand
+{
+    MAIN_HAND,
+    OFF_HAND
+};
+
 class GameMode
 {
 protected:
@@ -36,6 +42,7 @@ public:
     virtual bool interact(shared_ptr<Player> player, shared_ptr<Entity> entity);
     virtual void attack(shared_ptr<Player> player, shared_ptr<Entity> entity);
     virtual shared_ptr<ItemInstance> handleInventoryMouseClick(int containerId, int slotNum, int buttonNum, bool quickKeyHeld, shared_ptr<Player> player);
+    virtual void handleInventoryPickupAll(int containerId, int slotNum, shared_ptr<Player> player) {}
     virtual void handleCloseInventory(int containerId, shared_ptr<Player> player);
 	virtual void handleInventoryButtonClick(int containerId, int buttonId);
 

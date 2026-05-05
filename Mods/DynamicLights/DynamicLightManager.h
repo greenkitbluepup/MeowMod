@@ -88,6 +88,10 @@ public:
     // Runtime query (game thread, after endFeed)
     int  getDynamicContribution(int wx, int wy, int wz) const;
 
+    // Called when world opacity may change at a block position
+    // (e.g. block break/place). Marks overlapping emitter fields stale.
+    void notifyBlockChanged(int x, int y, int z);
+
     // Snapshot for one chunk bake slot (game thread, returns heap object)
     // chunkX/Y/Z are chunk coordinates (block >> 4).
     // Returns nullptr if no emitter is near enough to affect that chunk.

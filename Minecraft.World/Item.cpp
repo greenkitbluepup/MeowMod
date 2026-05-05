@@ -1,5 +1,7 @@
 #include "stdafx.h"
 
+#include "stdafx.h"
+
 #include "net.minecraft.locale.h"
 #include "net.minecraft.world.h"
 #include "net.minecraft.world.entity.h"
@@ -9,6 +11,7 @@
 #include "net.minecraft.world.item.h"
 #include "net.minecraft.world.item.alchemy.h"
 #include "net.minecraft.world.food.h"
+#include "ContentHooks.h"
 #include "net.minecraft.world.effect.h"
 #include "net.minecraft.stats.h"
 #include "MapItem.h"
@@ -493,7 +496,12 @@ void Item::staticCtor()
 	Item::horseArmorGold = (new Item(162))															->setIconName(L"gold_horse_armor")->setMaxStackSize(1)->setDescriptionId(IDS_ITEM_GOLD_HORSE_ARMOR)->setUseDescriptionId(IDS_DESC_GOLD_HORSE_ARMOR);
 	Item::horseArmorDiamond = (new Item(163))														->setIconName(L"diamond_horse_armor")->setMaxStackSize(1)->setDescriptionId(IDS_ITEM_DIAMOND_HORSE_ARMOR)->setUseDescriptionId(IDS_DESC_DIAMOND_HORSE_ARMOR);
 	Item::lead = (new LeashItem(164))																->setBaseItemTypeAndMaterial(eBaseItemType_pockettool,	eMaterial_undefined)->setIconName(L"lead")->setDescriptionId(IDS_ITEM_LEAD)->setUseDescriptionId(IDS_DESC_LEAD);
-	Item::nameTag = (new NameTagItem(165))															->setIconName(L"name_tag")->setDescriptionId(IDS_ITEM_NAME_TAG)->setUseDescriptionId(IDS_DESC_NAME_TAG);}
+	Item::nameTag = (new NameTagItem(165))															->setIconName(L"name_tag")->setDescriptionId(IDS_ITEM_NAME_TAG)->setUseDescriptionId(IDS_DESC_NAME_TAG);
+
+	// Let mods register their items while Item::items is live.
+	if (g_registerModItems)
+		g_registerModItems();
+}
 
 
 // 4J Stu - We need to do this after the staticCtor AND after staticCtors for other class

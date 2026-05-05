@@ -4,6 +4,7 @@
 #include "net.minecraft.world.entity.player.h"
 #include "ResultSlot.h"
 #include "ArmorSlot.h"
+#include "OffhandSlot.h"
 #include "CraftingContainer.h"
 #include "ResultContainer.h"
 #include "InventoryMenu.h"
@@ -19,6 +20,7 @@ const int InventoryMenu::INV_SLOT_START = InventoryMenu::ARMOR_SLOT_END;
 const int InventoryMenu::INV_SLOT_END = InventoryMenu::INV_SLOT_START + 9 * 3;
 const int InventoryMenu::USE_ROW_SLOT_START = InventoryMenu::INV_SLOT_END;
 const int InventoryMenu::USE_ROW_SLOT_END = InventoryMenu::USE_ROW_SLOT_START + 9;
+const int InventoryMenu::OFFHAND_SLOT = InventoryMenu::USE_ROW_SLOT_END;
 
 InventoryMenu::InventoryMenu(shared_ptr<Inventory> inventory, bool active, Player *player) : AbstractContainerMenu()
 {
@@ -32,13 +34,13 @@ void InventoryMenu::_init(shared_ptr<Inventory> inventory, bool active)
 	resultSlots = std::make_shared<ResultContainer>();
 
 	this->active = active;
-	addSlot(new ResultSlot( inventory->player, craftSlots, resultSlots, 0, 144, 36));
+   addSlot(new ResultSlot( inventory->player, craftSlots, resultSlots, 0, 154, 28));
 
 	for (int y = 0; y < 2; y++)
 	{
 		for (int x = 0; x < 2; x++)
 		{
-			addSlot(new Slot(craftSlots, x + y * 2, 88 + x * 18, 26 + y * 18));
+         addSlot(new Slot(craftSlots, x + y * 2, 98 + x * 18, 18 + y * 18));
 		}
 	}
 
@@ -61,7 +63,10 @@ void InventoryMenu::_init(shared_ptr<Inventory> inventory, bool active)
 		addSlot(new Slot(inventory, x, 8 + x * 18, 142));
 	}
 
-	slotsChanged();  // 4J removed craftSlots parameter, see comment below
+   // Offhand slot (index 45) aligned to modern Java inventory position.
+	addSlot(new OffhandSlot(inventory.get(), 77, 62));
+
+	slotsChanged();
 }
 
 void InventoryMenu::slotsChanged()  // 4J used to take a shared_ptr<Container> but wasn't using it, so removed to simplify things

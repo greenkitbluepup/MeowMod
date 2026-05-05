@@ -82,6 +82,21 @@
 #include "ZombieRenderer.h"
 #include "BatRenderer.h"
 #include "CaveSpiderRenderer.h"
+#include "..\Minecraft.Mods\ModLoader.h"
+#include "..\Minecraft.World\EntityIO.h"
+#include "..\Minecraft.World\StringHelpers.h"
+
+namespace
+{
+	static std::string narrowAscii(const std::wstring& w)
+	{
+		std::string s;
+		s.reserve(w.size());
+		for (wchar_t c : w)
+			s.push_back((c >= 0 && c <= 127) ? static_cast<char>(c) : '?');
+		return s;
+	}
+}
 
 double EntityRenderDispatcher::xOff = 0.0;
 double EntityRenderDispatcher::yOff = 0.0;
@@ -207,6 +222,9 @@ EntityRenderer *EntityRenderDispatcher::getRenderer(shared_ptr<Entity> e)
 
 void EntityRenderDispatcher::prepare(Level *level, Textures *textures, Font *font, shared_ptr<LivingEntity> player, shared_ptr<LivingEntity> crosshairPickMob, Options *options, float a)
 {
+    struct ClientRenderFramePayload { float partialTick; } payload{ a };
+	g_modLoader.emitEvent("client.render_frame", level, &payload, sizeof(payload));
+
 	this->level = level;
 	this->textures = textures;
 	this->options = options;
@@ -241,6 +259,9 @@ void EntityRenderDispatcher::prepare(Level *level, Textures *textures, Font *fon
 	yPlayer = player->yOld + (player->y - player->yOld) * a;
 	zPlayer = player->zOld + (player->z - player->zOld) * a;
 
+	g_modLoader.renderActiveCustomEntities(a);
+	g_modLoader.renderActiveProjectiles(a);
+
 }
 
 void EntityRenderDispatcher::render(shared_ptr<Entity> entity, float a)
@@ -248,6 +269,20 @@ void EntityRenderDispatcher::render(shared_ptr<Entity> entity, float a)
 	if (entity == nullptr)
 	{
 		return;
+	}
+
+  std::string entityId = narrowAscii(EntityIO::getEncodeId(entity));
+	if (g_modLoader.dispatchEntityRenderer(entity.get(), entityId.c_str(), a))
+		return;
+
+	if (entity->instanceof(eTYPE_ARROW) ||
+		entity->instanceof(eTYPE_THROWABLE) ||
+		entity->instanceof(eTYPE_FIREBALL) ||
+		entity->instanceof(eTYPE_FISHINGHOOK) ||
+		entity->instanceof(eTYPE_WITHER_SKULL))
+	{
+		if (g_modLoader.dispatchProjectileRenderer(entity.get(), entityId.c_str(), a))
+			return;
 	}
 
 	double x = entity->xOld + (entity->x - entity->xOld) * a;

@@ -16,6 +16,7 @@ protected:
 	CXuiControl m_hudScaleGroup; // Contains all the HUD elements except crosshair
 	CXuiControl m_hotbarGroup;
 	CXuiCtrlSlotItem *m_hotbarIcon[9];
+	CXuiCtrlSlotItem *m_offhandIcon;
 	CXuiProgressBar m_ExperienceProgress;
 	CXuiControl m_healthGroup;
 	CXuiControl m_healthIcon[10];
@@ -57,6 +58,7 @@ protected:
 						MAP_OVERRIDE(IDC_Inventory7, m_hotbarIcon[6])
 						MAP_OVERRIDE(IDC_Inventory8, m_hotbarIcon[7])
 						MAP_OVERRIDE(IDC_Inventory9, m_hotbarIcon[8])
+						MAP_OVERRIDE(IDC_OffhandSlot, m_offhandIcon)
 					END_MAP_CHILD_CONTROLS()
 					MAP_CONTROL(IDC_ExperienceProgress, m_ExperienceProgress)
 					MAP_CONTROL(IDC_Health, m_healthGroup)

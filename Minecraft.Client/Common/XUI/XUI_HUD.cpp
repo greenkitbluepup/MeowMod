@@ -141,6 +141,15 @@ HRESULT CXuiSceneHud::OnCustomMessage_TickScene()
 		m_hotbarIcon[j]->SetAlpha( m_hotbarIcon[j]->m_hObj, opacity );
 	}
 
+	// Update offhand slot
+	if (m_offhandIcon)
+	{
+		m_offhandIcon->SetSlot(m_offhandIcon->m_hObj,
+			pMinecraft->localplayers[m_iPad]->inventoryMenu->getSlot(InventoryMenu::OFFHAND_SLOT));
+		m_offhandIcon->SetUserIndex(m_offhandIcon->m_hObj, m_iPad);
+		m_offhandIcon->SetAlpha(m_offhandIcon->m_hObj, opacity);
+	}
+
 	// Update xp progress
 	if (pMinecraft->localgameModes[m_iPad]->canHurtPlayer())
 	{

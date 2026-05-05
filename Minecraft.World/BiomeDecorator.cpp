@@ -1,8 +1,10 @@
 #include "stdafx.h"
+#include "stdafx.h"
 #include "net.minecraft.world.level.h"
 #include "net.minecraft.world.level.tile.h"
 #include "net.minecraft.world.level.levelgen.feature.h"
 #include "net.minecraft.world.level.biome.h"
+#include "ContentHooks.h"
 
 BiomeDecorator::BiomeDecorator(Biome *biome)
 {
@@ -284,6 +286,14 @@ void BiomeDecorator::decorate()
 		delete lavaSpringFeature;
 	}
 	PIXEndNamedEvent();
+
+	// Let mods run their worldgen pass for this chunk.
+	if (g_decorateChunk)
+	{
+       unsigned int seed = static_cast<unsigned int>(xo) * 3418731287u
+						  ^ static_cast<unsigned int>(zo) * 1328979875u;
+		g_decorateChunk(static_cast<void*>(level), xo >> 4, zo >> 4, seed);
+	}
 }
 
 void BiomeDecorator::decorate(int count, Feature *feature)

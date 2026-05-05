@@ -11,6 +11,11 @@
       "name": "windows64",
       "displayName": "Windows64",
       "inherits": "base",
+      "generator": "Visual Studio 17 2022",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
       "cacheVariables": {
         "PLATFORM_DEFINES": "_WINDOWS64",
         "PLATFORM_NAME": "Windows64",

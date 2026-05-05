@@ -1,4 +1,5 @@
 #pragma once
+#pragma once
 
 #include "UIScene.h"
 #include "IUIScene_HUD.h"
@@ -9,6 +10,20 @@ class UIScene_HUD : public UIScene, public IUIScene_HUD
 {
 private:
 	bool m_bSplitscreen;
+	bool m_seenOffhandCustomDraw;
+
+	struct Slot0Data
+	{
+		float x0, y0, x1, y1;
+		float mat[16];
+		bool valid = false;
+	} m_slot0Data;
+
+	bool m_lastOffhandPresent;
+	int m_lastOffhandId;
+ int m_lastOffhandAux;
+	int m_lastOffhandCount;
+	float m_offhandPopTime;
 
 protected:
 	UIControl_Label m_labelChatText[CHAT_LINES_COUNT];

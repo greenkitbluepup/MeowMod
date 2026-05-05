@@ -9,11 +9,12 @@ private:
 	static const float CLICK_ACCURACY;
 	int x, y, z, face;
 	shared_ptr<ItemInstance> item;
+   unsigned char hand;
 	float clickX, clickY, clickZ;
 
 public:
 	UseItemPacket();
-	UseItemPacket(int x, int y, int z, int face, shared_ptr<ItemInstance> item, float clickX, float clickY, float clickZ);
+  UseItemPacket(int x, int y, int z, int face, shared_ptr<ItemInstance> item, unsigned char hand, float clickX, float clickY, float clickZ);
 	~UseItemPacket();
 
 	virtual void read(DataInputStream *dis);
@@ -26,6 +27,7 @@ public:
 	int getZ();
 	int getFace();
 	shared_ptr<ItemInstance> getItem();
+  unsigned char getHand();
 	float getClickX();
 	float getClickY();
 	float getClickZ();

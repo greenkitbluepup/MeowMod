@@ -111,9 +111,11 @@ add_subdirectory(Minecraft.Client)
 
 if(PLATFORM_NAME STREQUAL "Windows64")
   add_subdirectory(Mods/DynamicLights)
+  add_subdirectory(Mods/OffhandMod)
   # add_subdirectory(Mods/Template)   # uncomment to build the template mod
 endif()
-if(PLATFORM_NAME STREQUAL "Windows64") # Server is only supported on Windows for now
+
+if(BUILD_SERVER)
   add_subdirectory(Minecraft.Server)
 endif()
 
@@ -134,7 +136,8 @@ add_custom_target(GenerateBuildVer
 add_dependencies(Minecraft.World GenerateBuildVer)
 add_dependencies(Minecraft.Mods GenerateBuildVer)
 add_dependencies(Minecraft.Client GenerateBuildVer)
-if(PLATFORM_NAME STREQUAL "Windows64")
+
+if(BUILD_SERVER)
   add_dependencies(Minecraft.Server GenerateBuildVer)
 endif()
 

@@ -8,6 +8,7 @@
 #include "..\Minecraft.World\SoundTypes.h"
 #ifdef _WINDOWS64
 #include "Windows64\KeyboardMouseInput.h"
+#include "AbstractContainerScreen.h"
 #endif
 
 
@@ -125,19 +126,32 @@ void Screen::updateEvents()
 {
 #ifdef _WINDOWS64
 	// Poll mouse button state and dispatch click/release events
-	for (int btn = 0; btn < 3; btn++)
+   if (dynamic_cast<AbstractContainerScreen*>(this) == nullptr)
 	{
-		if (g_KBMInput.IsMouseButtonPressed(btn))
+		for (int btn = 0; btn < 3; btn++)
 		{
-			int xm = Mouse::getX() * width / minecraft->width;
-			int ym = height - Mouse::getY() * height / minecraft->height - 1;
-			mouseClicked(xm, ym, btn);
-		}
-		if (g_KBMInput.IsMouseButtonReleased(btn))
-		{
-			int xm = Mouse::getX() * width / minecraft->width;
-			int ym = height - Mouse::getY() * height / minecraft->height - 1;
-			mouseReleased(xm, ym, btn);
+			if (g_KBMInput.IsMouseButtonPressed(btn))
+			{
+				extern HWND g_hWnd;
+				RECT rc;
+				GetClientRect(g_hWnd, &rc);
+				int clientW = max(1, rc.right - rc.left);
+				int clientH = max(1, rc.bottom - rc.top);
+				int xm = Mouse::getX() * width / clientW;
+				int ym = height - Mouse::getY() * height / clientH - 1;
+				mouseClicked(xm, ym, btn);
+			}
+			if (g_KBMInput.IsMouseButtonReleased(btn))
+			{
+				extern HWND g_hWnd;
+				RECT rc;
+				GetClientRect(g_hWnd, &rc);
+				int clientW = max(1, rc.right - rc.left);
+				int clientH = max(1, rc.bottom - rc.top);
+				int xm = Mouse::getX() * width / clientW;
+				int ym = height - Mouse::getY() * height / clientH - 1;
+				mouseReleased(xm, ym, btn);
+			}
 		}
 	}
 
