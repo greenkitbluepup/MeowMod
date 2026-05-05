@@ -3,17 +3,16 @@ name: Nightly Build
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 2 * * *"
-      timezone: "America/Chicago"
+    - cron: "0 8 * * *"  # 02:00 America/Chicago (UTC-6 standard / UTC-5 daylight). GitHub Actions cron is always UTC.
 
 jobs:
   build:
     name: Build MeowMod Windows Zip
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: self-hosted
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Configure CMake
         shell: pwsh
@@ -63,7 +62,7 @@ jobs:
           Compress-Archive -Path package\* -DestinationPath dist\MeowMod-Nightly-Windows.zip -Force
 
       - name: Upload nightly zip
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: MeowMod-Nightly-Windows
           path: dist/MeowMod-Nightly-Windows.zip
